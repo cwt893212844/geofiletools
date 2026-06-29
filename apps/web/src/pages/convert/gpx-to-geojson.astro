@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="GPX to GeoJSON Converter"
+  description="Convert GPS GPX tracks, routes, and waypoints to GeoJSON in your browser."
+  mode="gpx-to-geojson"
+  accept=".gpx"
+  hint="Upload a .gpx file"
+  faq={[
+    {
+      question: 'Are elevation and timestamps kept?',
+      answer: 'GPX properties such as elevation, time, and name are mapped to GeoJSON feature properties when present.',
+    },
+    {
+      question: 'Can I use this for Strava or Garmin exports?',
+      answer: 'Yes. Standard GPX exports from fitness GPS devices are supported.',
+    },
+    {
+      question: 'Is the conversion private?',
+      answer: 'Yes. GPX parsing happens entirely in your browser.',
+    },
+  ]}
+/>

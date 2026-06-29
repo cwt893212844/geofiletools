@@ -1,0 +1,58 @@
+---
+import '../styles/global.css';
+import { siteConfig } from '../data/tools';
+
+interface Props {
+  title: string;
+  description: string;
+  canonicalPath?: string;
+  jsonLd?: Record<string, unknown>;
+}
+
+const { title, description, canonicalPath = Astro.url.pathname, jsonLd } = Astro.props;
+const fullTitle = `${title} | ${siteConfig.name}`;
+const canonical = new URL(canonicalPath, siteConfig.url).toString();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    <title>{fullTitle}</title>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900">
+    <header class="border-b border-slate-200 bg-white">
+      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
+        <a href="/" class="text-lg font-semibold text-brand-700">{siteConfig.name}</a>
+        <nav class="flex items-center gap-4 text-sm text-slate-600">
+          <a href="/#converters" class="hover:text-brand-700">Converters</a>
+          <a href="/#tools" class="hover:text-brand-700">Tools</a>
+        </nav>
+      </div>
+    </header>
+    <main class="mx-auto max-w-6xl px-4 py-8">
+      <slot />
+    </main>
+    <footer class="border-t border-slate-200 bg-white">
+      <div class="mx-auto max-w-6xl px-4 py-8 text-sm text-slate-500">
+        <p class="font-medium text-slate-700">Privacy first</p>
+        <p class="mt-1">
+          Conversions run locally in your browser whenever possible. Your files are not uploaded to our servers.
+        </p>
+        <p class="mt-4">© {new Date().getFullYear()} {siteConfig.name}</p>
+      </div>
+    </footer>
+    {jsonLd && (
+      <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    )}
+    <script is:inline>
+      // dragover only — drop is handled by React; inline drop preventDefault can empty dataTransfer.
+      document.addEventListener('dragover', function (e) { e.preventDefault(); }, false);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="DWG to GeoJSON Converter"
+  description="Convert DWG CAD files to GeoJSON with an instant map preview. Entirely local browser processing."
+  mode="dwg-to-geojson"
+  accept=".dwg"
+  hint="Upload a .dwg file"
+  faq={[
+    {
+      question: 'Will blocks and annotations be preserved?',
+      answer: 'Only geometry exported by the DWG/DXF translation pipeline is included. Text and blocks may be dropped.',
+    },
+    {
+      question: 'Can I open the GeoJSON in QGIS?',
+      answer: 'Yes. Download the GeoJSON and drag it into QGIS or add it as a vector layer.',
+    },
+    {
+      question: 'What happens to my DWG file?',
+      answer: 'It stays on your device. Nothing is uploaded to our servers during conversion.',
+    },
+  ]}
+/>

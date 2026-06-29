@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="DXF to Shapefile Converter"
+  description="Convert AutoCAD DXF drawings to ESRI Shapefile online. Drop a DXF file and download a ready-to-use .zip for QGIS or ArcGIS."
+  mode="dxf-to-shp"
+  accept=".dxf"
+  hint="Upload a .dxf file"
+  faq={[
+    {
+      question: 'Are my DXF files uploaded to a server?',
+      answer: 'No. Conversion runs locally in your browser using GDAL WebAssembly.',
+    },
+    {
+      question: 'Why is the Shapefile delivered as a ZIP?',
+      answer: 'Shapefiles require multiple sidecar files (.shp, .shx, .dbf, and often .prj). We package them into one ZIP download.',
+    },
+    {
+      question: 'What if my drawing has no CRS?',
+      answer: 'DXF files often lack a projection. Assign the correct EPSG code in QGIS after import if locations look wrong.',
+    },
+  ]}
+/>

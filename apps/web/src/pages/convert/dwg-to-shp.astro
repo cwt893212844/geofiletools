@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="DWG to Shapefile Converter"
+  description="Convert AutoCAD DWG to Shapefile in your browser. DWG is converted to DXF locally, then to SHP using GDAL."
+  mode="dwg-to-shp"
+  accept=".dwg"
+  hint="Upload a .dwg file"
+  faq={[
+    {
+      question: 'How is DWG handled in the browser?',
+      answer: 'DWG is first converted to DXF with LibreDWG WebAssembly, then translated to Shapefile with GDAL.',
+    },
+    {
+      question: 'Which DWG versions are supported?',
+      answer: 'Support depends on LibreDWG. Complex drawings may need to be saved as DXF from AutoCAD if conversion fails.',
+    },
+    {
+      question: 'Is this a replacement for ArcGIS Data Interoperability?',
+      answer: 'No. This is a quick conversion tool for simple CAD linework and parcels, not a full ETL pipeline.',
+    },
+  ]}
+/>

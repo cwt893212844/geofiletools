@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="Shapefile to GeoJSON Converter"
+  description="Convert ESRI Shapefile to GeoJSON online. Upload .shp with sidecar files or a zipped shapefile."
+  mode="shp-to-geojson"
+  accept=".shp,.shx,.dbf,.prj,.cpg,.zip"
+  hint="Upload .shp + sidecars, or a .zip shapefile"
+  faq={[
+    {
+      question: 'Do I need all Shapefile sidecar files?',
+      answer: 'At minimum include .shp, .shx, and .dbf. Add .prj if you want CRS preserved during conversion.',
+    },
+    {
+      question: 'Can I upload a zipped shapefile?',
+      answer: 'Yes. ZIP archives are expanded locally before conversion.',
+    },
+    {
+      question: 'Is there a file size limit?',
+      answer: 'Browser processing is limited to 30 MB per upload for stable performance.',
+    },
+  ]}
+/>

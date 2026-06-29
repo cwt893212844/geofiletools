@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="KML to GeoJSON Converter"
+  description="Convert Google Earth KML or KMZ files to GeoJSON online without uploading your data."
+  mode="kml-to-geojson"
+  accept=".kml,.kmz"
+  hint="Upload a .kml or .kmz file"
+  faq={[
+    {
+      question: 'Does KMZ work?',
+      answer: 'Yes. KMZ archives are unpacked locally and the embedded KML file is converted.',
+    },
+    {
+      question: 'Are styles preserved?',
+      answer: 'Geometry and properties are exported to GeoJSON. KML styling is not transferred.',
+    },
+    {
+      question: 'Which GIS apps support the output?',
+      answer: 'GeoJSON works in QGIS, Mapbox, Leaflet, OpenLayers, and most modern GIS stacks.',
+    },
+  ]}
+/>

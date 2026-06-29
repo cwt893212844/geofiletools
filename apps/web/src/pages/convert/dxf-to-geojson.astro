@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="DXF to GeoJSON Converter"
+  description="Convert DXF to GeoJSON in your browser and preview the result on a map. Perfect for web mapping workflows."
+  mode="dxf-to-geojson"
+  accept=".dxf"
+  hint="Upload a .dxf file"
+  faq={[
+    {
+      question: 'Can I preview the converted data?',
+      answer: 'Yes. This page renders the GeoJSON output on an OpenStreetMap basemap immediately after conversion.',
+    },
+    {
+      question: 'Which coordinate system is used?',
+      answer: 'Output is reprojected to EPSG:4326 (WGS84) when possible for web mapping compatibility.',
+    },
+    {
+      question: 'Does this support 3D CAD geometry?',
+      answer: 'Only geometry types supported by the DXF driver are exported. Complex 3D entities may be simplified.',
+    },
+  ]}
+/>

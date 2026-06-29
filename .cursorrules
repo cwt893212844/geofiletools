@@ -1,0 +1,116 @@
+# GeoFileTools — GIS Vector Converter Site
+
+英文浏览器端矢量 GIS 文件转换工具站。变现方向：广告 + 联盟；不做订阅、不做内容农场、不做栅格/遥感（另立项目）。
+
+## Stack
+
+- **Monorepo**：npm workspaces（pnpm 未安装，用 npm）
+- `apps/web` — Astro 7 + React + Tailwind v4（`@tailwindcss/vite`）
+- `packages/gis-core` — `@gis-tools/core`：gdal3.js、DWG、KML/GPX、坐标转换
+- **WASM**：gdal3.js 静态资源在 `apps/web/public/gdal/`（`postinstall` 自动拷贝）
+- **地图**：OpenLayers 9 + OSM
+- **DWG**：`@cadview/dwg` → DXF → gdal3.js（回退 `@mlightcad/libredwg-web`）
+- **SHP 读**：shpjs v6.2（`parseShp` + `parseDbf` + `combine`，不经过 GDAL）
+
+## Commands
+
+```bash
+cd "e:\000AI变现\06-AI写网站"
+npm install
+npm run dev      # http://localhost:4321
+npm test         # packages/gis-core vitest（14 tests）
+npm run build    # → apps/web/dist
+```
+
+## 已完成功能
+
+### 转换页（10）
+- `/convert/dxf-to-shp`, `dxf-to-geojson`
+- `/convert/shp-to-geojson`, `geojson-to-shp`, `geojson-to-gpkg`, `geojson-to-kml`
+- `/convert/dwg-to-shp`, `dwg-to-geojson`
+- `/convert/kml-to-geojson`, `gpx-to-geojson`
+
+### 工具页（2）
+- `/tools/geojson-viewer` — 拖入预览 + OpenLayers（SHP 走 shpjs，与转换页一致）
+- `/tools/coordinate-converter` — WGS84 ↔ UTM（proj4js）+ **输出坐标一键 Copy**
+
+### 核心模块（packages/gis-core）
+- `shapefile-to-geojson.ts` — shpjs 直读；**内容魔数识别**；GBK/CP936；**.prj → WGS84**
+- `geojson-normalize.ts` — GeoJSON 转 GDAL 前规范化：嵌套属性→JSON 字符串、ArcGIS `attributes` 兼容、字段名清洗；`prepareGeoJsonInput` 含预览用 WGS84 重投影
+- `gdal-service.ts` — GDAL 懒加载；GeoJSON→SHP `ENCODING=UTF-8`；GeoJSON→GPKG `RASTER_TABLE=NO`
+- `file-grouper.ts` — SHP 分组、ZIP、`sanitizeFilesForGdal`、`isShapefileUpload`
+- `coordinate.ts` — 坐标转换 + `reprojectFeatureCollection` / `detectGeoJsonCrs` / `looksLikeGeographic` / EPSG:4490
+- `dwg-pipeline.ts` — DWG→DXF→GDAL
+- `kml-gpx.ts` — KML/KMZ/GPX ↔ GeoJSON；`geoJSONToKml` 强制 WGS84
+
+### UI
+- `ConverterApp` — **全部 10 个转换器**转换后自动地图范围预览；`geojson-to-*` 用 `prepareGeoJsonInput`
+- `FileDropzone` — **v7 单 window drop 处理器** + `getDroppedFiles`（items 兜底）；框内仅负责变绿视觉反馈
+- `ConversionProgress`, `DownloadButton`, `MapPreview`, `FormatFAQ`
+- **布局**：转换页/工具页 `mx-auto max-w-4xl` 居中
+- SEO：sitemap、JSON-LD、robots.txt
+
+### 部署配置
+- 根目录 `vercel.json` + `apps/web/vercel.json`
+- `site` 占位：`https://geofiletools.example.com`（上线前改真实域名）
+
+## 关键修复（2026-06-27）
+
+1. **SHP→GeoJSON（shpjs）**：魔数识别、主线程直解析、WGS84 重投影；坏 SHP（扩展名与内容不符）有明确报错
+2. **GeoJSON→GPKG/SHP/KML**：`geojson-normalize.ts` 保留属性 + 地图预览重投影；不再丢 nested/ArcGIS 字段
+3. **全站地图预览**：10 个转换器转换完均 fit 范围（含 geojson→gpkg 预览输入 GeoJSON）
+4. **拖拽（v7）**：
+   - 曾用 zone `stopPropagation` + window 跳过 zone 内 drop → **框内变绿但 files 为空、无反应**
+   - 现改为 **单一 `window` drop 处理**，不用 stopPropagation；`dataTransfer.items` 兜底
+   - `BaseLayout` 仅 inline **dragover** preventDefault（**不要** inline drop，会清空 dataTransfer）
+   - 勿拖到浏览器地址栏/标签栏（会打开 `file://` 原文）
+5. **Viewer**：SHP 预览走 shpjs 与转换页一致
+6. **坐标工具**：Result 旁 Copy 按钮（6 位小数 `x, y`）
+7. **页面居中**：`mx-auto max-w-4xl`
+
+## 约束与限制
+
+- 单文件上限 **30MB**
+- 纯浏览器处理，无服务端
+- DWG 含 **GPL-3.0**，商用前需合规评估
+- 首次 GDAL 转换 ~15MB WASM；`useWorker: false` 大文件可能卡顿
+- DXF/DWG 无 CRS 时假设 WGS84
+- CGCS2000→WGS84 厘米级差异，Web 地图可接受
+
+## 验收状态
+
+- [x] `npm test` 14 passed（含 shapefile + geojson-normalize）
+- [x] `npm run build` 13 页静态站
+- [x] SHP 四件套拖拽 + 转换 + 地图预览（坏 SHP 为源文件问题）
+- [ ] 拖拽 v7 实机复测（框内/页面任意处松手均应开始转换）
+- [ ] geojson→gpkg 实机复测（属性表 + 地图预览）
+- [ ] DXF/DWG、kml/gpx 等其他格式
+- [ ] 部署公网 + 真实域名
+- [ ] AdSense（`public/ads.txt` 占位）
+
+## Next Steps（新对话优先）
+
+1. **部署** Vercel/Cloudflare Pages，改 `astro.config.mjs` `site` + `robots.txt`
+2. **实机复测** geojson→gpkg、拖拽 v7、DXF/DWG
+3. **可选增强**：
+   - DXF/DWG CRS 手动选择
+   - Viewer 要素点击属性
+   - 坐标工具 **CGCS2000** EPSG
+   - GDAL Worker 化
+   - geojson→shp GBK 编码选项
+4. **变现**：sitemap 提交、AdSense、GIS 联盟
+
+## 架构备忘
+
+```
+SHP→GeoJSON：shpjs + 魔数 + proj4→WGS84
+GeoJSON→*：prepareGeoJsonInput 规范化 → GDAL ogr2ogr
+KML/GPX→GeoJSON：@tmcw/togeojson
+DWG：cadview/dwg → DXF → GDAL
+拖拽：window 单 drop 处理器；BaseLayout 仅 dragover inline
+地图：OpenLayers EPSG:4326，自动 fit extent
+```
+
+## 竞品定位
+
+对标 MyGeodata、Maparz；差异化：**浏览器内处理 + 转换后地图预览 + 单任务落地页**

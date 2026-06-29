@@ -1,0 +1,48 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { CoordinateConverterApp } from '../../components/CoordinateConverterApp';
+import { FormatFAQ } from '../../components/FormatFAQ';
+import { siteConfig } from '../../data/tools';
+---
+
+<BaseLayout
+  title="Coordinate Converter"
+  description="Convert WGS84 latitude/longitude and UTM coordinates online. Fast, private, browser-based."
+  jsonLd={{
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: 'Coordinate Converter',
+    applicationCategory: 'GISApplication',
+    operatingSystem: 'Any',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    description: 'Transform WGS84 and UTM coordinates in the browser.',
+    url: new URL('/tools/coordinate-converter', siteConfig.url).toString(),
+  }}
+>
+  <section class="mx-auto max-w-4xl">
+    <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Coordinate Converter</h1>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+      Transform coordinates between WGS84 and common UTM zones without desktop GIS software.
+    </p>
+    <div class="mt-8">
+      <CoordinateConverterApp client:load />
+    </div>
+    <FormatFAQ
+      client:visible
+      items={[
+        {
+          question: 'Which datums are supported?',
+          answer: 'This tool uses WGS84-based EPSG definitions via proj4js.',
+        },
+        {
+          question: 'Can I convert UTM to latitude/longitude?',
+          answer: 'Yes. Enter easting/northing and the UTM zone, then choose a WGS84 output CRS.',
+        },
+        {
+          question: 'Is this survey-grade?',
+          answer: 'Results are suitable for mapping and quick checks, not legal surveying.',
+        },
+      ]}
+    />
+  </section>
+</BaseLayout>

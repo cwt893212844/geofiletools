@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="GeoJSON to KML Converter"
+  description="Export GeoJSON as KML for Google Earth. Browser-side conversion powered by GDAL."
+  mode="geojson-to-kml"
+  accept=".geojson,.json"
+  hint="Upload a .geojson or .json file"
+  faq={[
+    {
+      question: 'Can I open the KML in Google Earth?',
+      answer: 'Yes. Download the KML and open it directly in Google Earth desktop or web.',
+    },
+    {
+      question: 'Which geometry types are supported?',
+      answer: 'Points, lines, and polygons are exported when they are supported by the KML driver.',
+    },
+    {
+      question: 'Is reprojection applied?',
+      answer: 'GeoJSON is treated as WGS84 for KML export, which is the standard for Google Earth.',
+    },
+  ]}
+/>

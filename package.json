@@ -1,0 +1,18 @@
+{
+  "name": "gis-vector-tools",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/web",
+    "preview": "npm run preview -w apps/web",
+    "test": "npm run test -w @gis-tools/core",
+    "postinstall": "node scripts/copy-gdal-assets.mjs"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

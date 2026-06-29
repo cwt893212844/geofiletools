@@ -1,0 +1,48 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { GeoJsonViewerApp } from '../../components/GeoJsonViewerApp';
+import { FormatFAQ } from '../../components/FormatFAQ';
+import { siteConfig } from '../../data/tools';
+---
+
+<BaseLayout
+  title="GeoJSON Viewer"
+  description="Preview GeoJSON, Shapefile, or DXF on an interactive map. Files stay in your browser."
+  jsonLd={{
+    '@context': 'https://schema.org',
+    '@type': 'WebApplication',
+    name: 'GeoJSON Viewer',
+    applicationCategory: 'GISApplication',
+    operatingSystem: 'Any',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    description: 'Preview GeoJSON and vector files locally in the browser.',
+    url: new URL('/tools/geojson-viewer', siteConfig.url).toString(),
+  }}
+>
+  <section class="mx-auto max-w-4xl">
+    <h1 class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">GeoJSON Viewer</h1>
+    <p class="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+      Drag GeoJSON, Shapefile sidecars, zipped shapefiles, or DXF files to inspect geometry on a map.
+    </p>
+    <div class="mt-8">
+      <GeoJsonViewerApp client:load />
+    </div>
+    <FormatFAQ
+      client:visible
+      items={[
+        {
+          question: 'Which formats can I preview?',
+          answer: 'GeoJSON, zipped Shapefile, Shapefile sidecars, and DXF are supported.',
+        },
+        {
+          question: 'Can I click features to see attributes?',
+          answer: 'The current viewer focuses on geometry preview. Attribute inspection will be added in a later release.',
+        },
+        {
+          question: 'Is my data uploaded?',
+          answer: 'No. Files are read locally and converted in-browser when needed.',
+        },
+      ]}
+    />
+  </section>
+</BaseLayout>

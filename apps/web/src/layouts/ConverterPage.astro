@@ -1,0 +1,52 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { ConverterApp } from '../components/ConverterApp';
+import { FormatFAQ } from '../components/FormatFAQ';
+import { siteConfig } from '../data/tools';
+
+interface Props {
+  title: string;
+  description: string;
+  mode:
+    | 'dxf-to-shp'
+    | 'dxf-to-geojson'
+    | 'shp-to-geojson'
+    | 'geojson-to-shp'
+    | 'dwg-to-shp'
+    | 'dwg-to-geojson'
+    | 'kml-to-geojson'
+    | 'gpx-to-geojson'
+    | 'geojson-to-kml'
+    | 'geojson-to-gpkg';
+  accept: string;
+  hint: string;
+  faq: { question: string; answer: string }[];
+}
+
+const { title, description, mode, accept, hint, faq } = Astro.props;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: title,
+  applicationCategory: 'GISApplication',
+  operatingSystem: 'Any',
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  description,
+  url: new URL(Astro.url.pathname, siteConfig.url).toString(),
+};
+---
+
+<BaseLayout title={title} description={description} jsonLd={jsonLd}>
+  <section class="mx-auto max-w-4xl">
+    <p class="text-sm font-medium uppercase tracking-wide text-brand-600">Free online converter</p>
+    <h1 class="mt-2 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">{title}</h1>
+    <p class="mt-4 text-base leading-7 text-slate-600">{description}</p>
+    <div class="mt-4 inline-flex items-center rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">
+      Processed locally in your browser
+    </div>
+    <div class="mt-8">
+      <ConverterApp client:load mode={mode} accept={accept} hint={hint} />
+    </div>
+    <FormatFAQ client:visible items={faq} />
+  </section>
+</BaseLayout>

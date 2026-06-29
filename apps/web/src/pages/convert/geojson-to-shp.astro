@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="GeoJSON to Shapefile Converter"
+  description="Convert GeoJSON to Shapefile (.zip) online. No desktop GIS required."
+  mode="geojson-to-shp"
+  accept=".geojson,.json"
+  hint="Upload a .geojson or .json file"
+  faq={[
+    {
+      question: 'What projection will the Shapefile use?',
+      answer: 'GeoJSON is treated as WGS84 (EPSG:4326) unless your data already includes CRS metadata.',
+    },
+    {
+      question: 'Can ArcGIS open the result?',
+      answer: 'Yes. The download is a standard Shapefile archive compatible with ArcGIS, QGIS, and Global Mapper.',
+    },
+    {
+      question: 'Are attributes preserved?',
+      answer: 'Feature properties are written to the DBF when field names and types are compatible with Shapefile limits.',
+    },
+  ]}
+/>

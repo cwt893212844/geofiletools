@@ -1,0 +1,25 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="GeoJSON to GeoPackage Converter"
+  description="Convert GeoJSON to GeoPackage (.gpkg) online in your browser using GDAL."
+  mode="geojson-to-gpkg"
+  accept=".geojson,.json"
+  hint="Upload a .geojson or .json file"
+  faq={[
+    {
+      question: 'Why use GeoPackage instead of Shapefile?',
+      answer: 'GeoPackage is a single-file format without field name limits and is better suited for modern GIS workflows.',
+    },
+    {
+      question: 'Which apps support GPKG?',
+      answer: 'QGIS, ArcGIS Pro, GDAL, and most modern GIS tools support GeoPackage.',
+    },
+    {
+      question: 'Is my file uploaded?',
+      answer: 'No. Conversion happens locally in your browser.',
+    },
+  ]}
+/>
