@@ -43,6 +43,7 @@ export type ProgressReporter = (progress: number, message?: string) => void;
 
 export interface GdalOperationOptions {
   onProgress?: ProgressReporter;
+  paths?: GdalPaths;
 }
 
 export const MAX_FILE_SIZE_BYTES = 30 * 1024 * 1024;

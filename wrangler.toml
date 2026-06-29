@@ -3,8 +3,4 @@ name = "geofiletools"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "apps/web/dist"
 
-[build]
-command = "npm run build"
-
-[build.environment]
-NODE_VERSION = "22"
+# Git-connected builds (Dashboard): npm run build, Node 22

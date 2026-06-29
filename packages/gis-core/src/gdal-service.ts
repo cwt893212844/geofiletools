@@ -178,7 +178,7 @@ async function openDataset(
   files: File[],
   options?: GdalOperationOptions,
 ): Promise<{ Gdal: GdalInstance; dataset: unknown; datasetFiles: File[] }> {
-  const Gdal = await getGdal(defaultPaths, options);
+  const Gdal = await getGdal(options?.paths ?? defaultPaths, options);
   const prepared = await prepareGdalInputFiles(files);
   const datasetFiles = prepared.files;
 

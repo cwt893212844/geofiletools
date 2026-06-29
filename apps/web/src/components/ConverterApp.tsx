@@ -13,6 +13,7 @@ import {
   type InspectResult,
   type OutputFormat,
 } from '@gis-tools/core';
+import { GDAL_PATHS } from '../lib/gdal-paths';
 import { ConversionProgress } from './ConversionProgress';
 import { DownloadButton } from './DownloadButton';
 import { FileDropzone } from './FileDropzone';
@@ -92,7 +93,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       const primary = inputFiles[0];
       if (!primary) throw new Error('No file selected.');
 
-      const gdalOptions = { onProgress };
+      const gdalOptions = { onProgress, paths: GDAL_PATHS };
       let blob: Blob;
       let fileName = suggestedDownloadName(primary.name, outputFormat);
       let inspection: InspectResult | null = null;

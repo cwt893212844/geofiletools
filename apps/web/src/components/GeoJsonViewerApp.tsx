@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { convertShapefileToGeoJSON, inspect, isShapefileUpload, toGeoJSON } from '@gis-tools/core';
+import { GDAL_PATHS } from '../lib/gdal-paths';
 import { ConversionProgress } from './ConversionProgress';
 import { FileDropzone } from './FileDropzone';
 import { MapPreview } from './MapPreview';
@@ -41,9 +42,11 @@ export function GeoJsonViewerApp() {
         return;
       }
 
+      const gdalOptions = { onProgress, paths: GDAL_PATHS };
+
       if (isShapefileUpload(files)) {
         onProgress(20, 'Reading shapefile…');
-        const result = await convertShapefileToGeoJSON(files, { onProgress });
+        const result = await convertShapefileToGeoJSON(files, gdalOptions);
         const text = await result.blob.text();
         setGeojsonText(text);
         setMeta(
@@ -55,8 +58,8 @@ export function GeoJsonViewerApp() {
         return;
       }
 
-      const report = await inspect(files, { onProgress });
-      const text = await toGeoJSON(files, 'EPSG:4326', { onProgress });
+      const report = await inspect(files, gdalOptions);
+      const text = await toGeoJSON(files, 'EPSG:4326', gdalOptions);
       setGeojsonText(text);
       setMeta(
         report.layers.map((layer) => `${layer.name}: ${layer.featureCount} features`).join(' · ') ||
