@@ -27,6 +27,12 @@ export const convertTools: ToolLink[] = [
     category: 'convert',
   },
   {
+    title: 'DWG to DXF',
+    href: '/convert/dwg-to-dxf',
+    description: 'Convert AutoCAD DWG to open DXF in your browser.',
+    category: 'convert',
+  },
+  {
     title: 'DWG to Shapefile',
     href: '/convert/dwg-to-shp',
     description: 'Convert AutoCAD DWG to Shapefile in your browser.',

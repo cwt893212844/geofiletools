@@ -3,6 +3,7 @@ import {
   convert,
   convertDwg,
   convertShapefileToGeoJSON,
+  dwgToDxfFile,
   geoJSONToKml,
   inspect,
   kmlOrGpxFileToGeoJSONBlob,
@@ -24,6 +25,7 @@ export type ConverterMode =
   | 'dxf-to-geojson'
   | 'shp-to-geojson'
   | 'geojson-to-shp'
+  | 'dwg-to-dxf'
   | 'dwg-to-shp'
   | 'dwg-to-geojson'
   | 'kml-to-geojson'
@@ -101,7 +103,15 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       let previewTextOverride: string | undefined;
       let previewViaFiles: File[] | undefined;
 
-      if (usesDwgPipeline(mode)) {
+      if (mode === 'dwg-to-dxf') {
+        onProgress(25, 'Converting DWG to DXF…');
+        const dxfFile = await dwgToDxfFile(primary);
+        blob = dxfFile;
+        fileName = dxfFile.name;
+        previewViaFiles = [dxfFile];
+        inspection = await inspect([dxfFile], gdalOptions);
+        onProgress(95, 'Done');
+      } else if (usesDwgPipeline(mode)) {
         const dwgResult = await convertDwg(primary, { outputFormat, targetCrs: 'EPSG:4326' }, gdalOptions);
         blob = dwgResult.blob;
         previewViaFiles = [dwgResult.dxfFile];

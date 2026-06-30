@@ -1,0 +1,29 @@
+---
+import ConverterPage from '../../layouts/ConverterPage.astro';
+---
+
+<ConverterPage
+  title="DWG to DXF Converter"
+  description="Convert AutoCAD DWG to DXF in your browser. Download an open DXF file for QGIS, BricsCAD, or other CAD/GIS tools."
+  mode="dwg-to-dxf"
+  accept=".dwg"
+  hint="Upload a .dwg file"
+  faq={[
+    {
+      question: 'How is DWG converted to DXF in the browser?',
+      answer: 'Your DWG is translated to DXF locally using WebAssembly (cadview/dwg with a LibreDWG fallback). Nothing is uploaded.',
+    },
+    {
+      question: 'Which DWG versions are supported?',
+      answer: 'Support depends on the embedded DWG reader. Newer or complex drawings may need to be re-saved from AutoCAD if conversion fails.',
+    },
+    {
+      question: 'Will blocks, text, and dimensions be preserved?',
+      answer: 'Simple geometry usually converts well. Complex blocks, annotations, and xrefs may be simplified or omitted.',
+    },
+    {
+      question: 'Can I preview the result on a map?',
+      answer: 'Yes. After conversion we derive a GeoJSON preview from the DXF for the built-in map view. Download the DXF for CAD use.',
+    },
+  ]}
+/>
