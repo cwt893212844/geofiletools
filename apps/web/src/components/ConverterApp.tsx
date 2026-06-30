@@ -102,15 +102,19 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       let inputGeoJsonText: string | undefined;
       let previewTextOverride: string | undefined;
       let previewViaFiles: File[] | undefined;
+      const deferMapPreview = mode === 'dwg-to-dxf';
 
       if (mode === 'dwg-to-dxf') {
-        onProgress(25, 'Converting DWG to DXF…');
+        onProgress(40, 'Converting DWG to DXF…');
         const dxfFile = await dwgToDxfFile(primary);
         blob = dxfFile;
         fileName = dxfFile.name;
         previewViaFiles = [dxfFile];
-        inspection = await inspect([dxfFile], gdalOptions);
-        onProgress(95, 'Done');
+        inspection = {
+          layers: [{ name: 'DXF export', geometryType: 'Mixed', featureCount: 0 }],
+          warnings: [],
+        };
+        onProgress(95, 'DXF ready');
       } else if (usesDwgPipeline(mode)) {
         const dwgResult = await convertDwg(primary, { outputFormat, targetCrs: 'EPSG:4326' }, gdalOptions);
         blob = dwgResult.blob;
@@ -179,50 +183,58 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       setResultBlob(blob);
       setResultName(fileName);
 
-      try {
-        onProgress(96, 'Rendering map preview…');
-        let geojsonText: string;
-
-        if (previewTextOverride) {
-          geojsonText = previewTextOverride;
-        } else if (outputFormat === 'GeoJSON') {
-          geojsonText = (await blob.text()).trim();
-        } else if (inputGeoJsonText) {
-          geojsonText = inputGeoJsonText.trim();
-        } else {
-          geojsonText = (await toGeoJSON(previewViaFiles ?? inputFiles, 'EPSG:4326', gdalOptions)).trim();
-        }
-
-        setPreviewGeoJSON(geojsonText || '{"type":"FeatureCollection","features":[]}');
-
-        if (outputFormat === 'GeoJSON' && inspection) {
-          try {
-            const collection = JSON.parse(geojsonText) as GeoJSON.FeatureCollection;
-            const outputCount = collection.features?.length ?? 0;
-            if (outputCount > 0 && inspection.layers.every((layer) => layer.featureCount === 0)) {
-              setReport({
-                ...inspection,
-                layers: [
-                  {
-                    name: inspection.layers[0]?.name ?? 'features',
-                    geometryType: inspection.layers[0]?.geometryType ?? 'Mixed',
-                    featureCount: outputCount,
-                    crs: inspection.layers[0]?.crs,
-                  },
-                ],
-                warnings: inspection.warnings,
-              });
-            }
-          } catch {
-            // keep inspect report as-is
-          }
-        }
-      } catch {
-        // Map preview is optional — conversion result still downloads
-      }
-
       onProgress(100, 'Conversion complete');
       setStage('done');
+
+      const loadPreview = async () => {
+        try {
+          onProgress(96, 'Rendering map preview…');
+          let geojsonText: string;
+
+          if (previewTextOverride) {
+            geojsonText = previewTextOverride;
+          } else if (outputFormat === 'GeoJSON') {
+            geojsonText = (await blob.text()).trim();
+          } else if (inputGeoJsonText) {
+            geojsonText = inputGeoJsonText.trim();
+          } else {
+            geojsonText = (await toGeoJSON(previewViaFiles ?? inputFiles, 'EPSG:4326', gdalOptions)).trim();
+          }
+
+          setPreviewGeoJSON(geojsonText || '{"type":"FeatureCollection","features":[]}');
+
+          if (outputFormat === 'GeoJSON' && inspection) {
+            try {
+              const collection = JSON.parse(geojsonText) as GeoJSON.FeatureCollection;
+              const outputCount = collection.features?.length ?? 0;
+              if (outputCount > 0 && inspection.layers.every((layer) => layer.featureCount === 0)) {
+                setReport({
+                  ...inspection,
+                  layers: [
+                    {
+                      name: inspection.layers[0]?.name ?? 'features',
+                      geometryType: inspection.layers[0]?.geometryType ?? 'Mixed',
+                      featureCount: outputCount,
+                      crs: inspection.layers[0]?.crs,
+                    },
+                  ],
+                  warnings: inspection.warnings,
+                });
+              }
+            } catch {
+              // keep inspect report as-is
+            }
+          }
+        } catch {
+          // Map preview is optional — conversion result still downloads
+        }
+      };
+
+      if (deferMapPreview) {
+        void loadPreview();
+      } else {
+        await loadPreview();
+      }
     } catch (caught) {
       setStage('error');
       setError(caught instanceof Error ? caught.message : 'Conversion failed.');

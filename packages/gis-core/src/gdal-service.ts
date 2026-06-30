@@ -119,42 +119,61 @@ export async function getGdal(
   report(options, 5, 'Loading GIS engine…');
 
   gdalLoadingPromise = (async () => {
-    let initFn: ((opts: Record<string, unknown>) => Promise<GdalInstance>) | null = null;
-
     try {
-      const mod = await import('gdal3.js');
-      if (typeof mod === 'function') {
-        initFn = mod as typeof initFn;
-      } else if (typeof mod.default === 'function') {
-        initFn = mod.default as typeof initFn;
-      } else if (typeof (mod as { initGdalJs?: typeof initFn }).initGdalJs === 'function') {
-        initFn = (mod as { initGdalJs: typeof initFn }).initGdalJs;
+      let initFn: ((opts: Record<string, unknown>) => Promise<GdalInstance>) | null = null;
+
+      try {
+        const mod = await import('gdal3.js');
+        if (typeof mod === 'function') {
+          initFn = mod as typeof initFn;
+        } else if (typeof mod.default === 'function') {
+          initFn = mod.default as typeof initFn;
+        } else if (typeof (mod as { initGdalJs?: typeof initFn }).initGdalJs === 'function') {
+          initFn = (mod as { initGdalJs: typeof initFn }).initGdalJs;
+        }
+      } catch {
+        // fallback to script tag
       }
-    } catch {
-      // fallback to script tag
+
+      report(options, 10, 'Loading GIS engine…');
+
+      if (!initFn) {
+        await loadScript(resolveAssetUrl(paths.js));
+        initFn = (window as { initGdalJs?: typeof initFn }).initGdalJs ?? null;
+      }
+
+      if (!initFn) {
+        throw new Error('Failed to load gdal3.js initialization function.');
+      }
+
+      const basePath = resolveAssetUrl(paths.js).replace(/\/gdal3\.js$/, '');
+
+      report(options, 15, 'Initializing WASM…');
+      const initTimeoutMs = 180_000;
+      gdalInstance = await Promise.race([
+        initFn({
+          path: basePath,
+          useWorker: false,
+        }),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  'GIS engine timed out loading (~27 MB WASM). Check your network or try again later.',
+                ),
+              ),
+            initTimeoutMs,
+          );
+        }),
+      ]);
+
+      report(options, 20, 'GIS engine ready');
+      return gdalInstance;
+    } catch (error) {
+      gdalLoadingPromise = null;
+      throw error;
     }
-
-    report(options, 10, 'Loading GIS engine…');
-
-    if (!initFn) {
-      await loadScript(resolveAssetUrl(paths.js));
-      initFn = (window as { initGdalJs?: typeof initFn }).initGdalJs ?? null;
-    }
-
-    if (!initFn) {
-      throw new Error('Failed to load gdal3.js initialization function.');
-    }
-
-    const basePath = resolveAssetUrl(paths.js).replace(/\/gdal3\.js$/, '');
-
-    report(options, 15, 'Initializing WASM…');
-    gdalInstance = await initFn({
-      path: basePath,
-      useWorker: false,
-    });
-
-    report(options, 20, 'GIS engine ready');
-    return gdalInstance;
   })();
 
   return gdalLoadingPromise;
