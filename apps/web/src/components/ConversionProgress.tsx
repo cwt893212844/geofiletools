@@ -22,14 +22,16 @@ export function ConversionProgress({ stage, progress, message, error }: Conversi
 
   const isError = stage === 'error' || Boolean(error);
   const activeIndex = ['loading-engine', 'reading', 'converting', 'packaging', 'done'].indexOf(stage);
-  const clampedProgress = Math.max(0, Math.min(100, progress));
+  const isDone = stage === 'done';
+  const clampedProgress = Math.max(0, Math.min(100, isDone ? 100 : progress));
+  const headline = isError ? (message || labels[stage]) : isDone ? labels.done : message || labels[stage];
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between gap-4">
         <div>
           <p className={`font-medium ${isError ? 'text-red-600' : 'text-slate-800'}`}>
-            {message || labels[stage]}
+            {headline}
           </p>
           {!isError && <p className="mt-1 text-xs text-slate-500">{clampedProgress}%</p>}
         </div>

@@ -109,11 +109,6 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         const dxfFile = await dwgToDxfFile(primary);
         blob = dxfFile;
         fileName = dxfFile.name;
-        previewViaFiles = [dxfFile];
-        inspection = {
-          layers: [{ name: 'DXF export', geometryType: 'Mixed', featureCount: 0 }],
-          warnings: [],
-        };
         onProgress(95, 'DXF ready');
       } else if (usesDwgPipeline(mode)) {
         const dwgResult = await convertDwg(primary, { outputFormat, targetCrs: 'EPSG:4326' }, gdalOptions);
@@ -188,8 +183,11 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
 
       const loadPreview = async () => {
         try {
-          onProgress(96, 'Rendering map preview…');
+          if (!deferMapPreview) {
+            onProgress(96, 'Rendering map preview…');
+          }
           let geojsonText: string;
+          const previewOptions = deferMapPreview ? { paths: GDAL_PATHS } : gdalOptions;
 
           if (previewTextOverride) {
             geojsonText = previewTextOverride;
@@ -198,7 +196,9 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
           } else if (inputGeoJsonText) {
             geojsonText = inputGeoJsonText.trim();
           } else {
-            geojsonText = (await toGeoJSON(previewViaFiles ?? inputFiles, 'EPSG:4326', gdalOptions)).trim();
+            geojsonText = (
+              await toGeoJSON(previewViaFiles ?? inputFiles, 'EPSG:4326', previewOptions)
+            ).trim();
           }
 
           setPreviewGeoJSON(geojsonText || '{"type":"FeatureCollection","features":[]}');
@@ -231,7 +231,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       };
 
       if (deferMapPreview) {
-        void loadPreview();
+        // DWG→DXF: skip map preview (GDAL WASM ~27 MB, unreliable on slow networks)
       } else {
         await loadPreview();
       }
@@ -308,7 +308,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         </div>
       )}
 
-      {stage === 'done' && <MapPreview geojsonText={previewGeoJSON} />}
+      {stage === 'done' && mode !== 'dwg-to-dxf' && <MapPreview geojsonText={previewGeoJSON} />}
     </div>
   );
 }
