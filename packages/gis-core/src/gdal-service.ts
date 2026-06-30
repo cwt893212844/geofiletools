@@ -1,6 +1,7 @@
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
+import { fetchGdalWasmBinary } from './gdal-wasm-loader';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GdalInstance = any;
@@ -147,6 +148,17 @@ export async function getGdal(
       }
 
       const basePath = resolveAssetUrl(paths.js).replace(/\/gdal3\.js$/, '');
+
+      report(options, 12, 'Downloading GIS engine…');
+      const wasmBinary = await fetchGdalWasmBinary(paths);
+      if (wasmBinary) {
+        try {
+          const { GDALFunctions } = await import('gdal3.js/src/allCFunctions.js');
+          GDALFunctions.Module.wasmBinary = wasmBinary;
+        } catch {
+          // gdal will fetch wasm via locateFile when deep import is unavailable
+        }
+      }
 
       report(options, 15, 'Initializing WASM…');
       const initTimeoutMs = 300_000;

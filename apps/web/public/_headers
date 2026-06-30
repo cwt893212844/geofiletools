@@ -1,6 +1,5 @@
 /*.wasm
   Content-Type: application/wasm
 
-/gdal/gdal3WebAssembly.wasm
-  Content-Type: application/wasm
-  Content-Encoding: br
+/gdal/gdal3WebAssembly.wasm.br
+  Content-Type: application/octet-stream
