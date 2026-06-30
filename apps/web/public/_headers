@@ -1,5 +1,5 @@
 /*.wasm
   Content-Type: application/wasm
 
-/gdal/gdal3WebAssembly.wasm.br
-  Content-Type: application/octet-stream
+/gdal/gdal3WebAssembly.wasm.gz
+  Content-Type: application/gzip
