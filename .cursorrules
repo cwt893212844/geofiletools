@@ -52,7 +52,7 @@ npm run build    # → apps/web/dist
 
 ### 部署配置
 - 根目录 `vercel.json` + `apps/web/vercel.json`
-- `site` 占位：`https://geofiletools.example.com`（上线前改真实域名）
+- `site`：`https://geofiletools.com`（已上线）
 
 ## 关键修复（2026-06-27）
 

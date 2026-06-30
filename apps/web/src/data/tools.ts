@@ -10,7 +10,7 @@ export const siteConfig = {
   tagline: 'Free browser-based GIS vector converters',
   description:
     'Convert DXF, DWG, Shapefile, GeoJSON, KML, and GPX online. Files are processed locally in your browser — nothing is uploaded.',
-  url: 'https://geofiletools.example.com',
+  url: 'https://geofiletools.com',
 };
 
 export const convertTools: ToolLink[] = [

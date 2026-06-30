@@ -6,7 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://geofiletools.example.com',
+  site: 'https://geofiletools.com',
   integrations: [react(), sitemap()],
   vite: {
     plugins: [tailwindcss()],
