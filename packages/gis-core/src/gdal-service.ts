@@ -149,7 +149,7 @@ export async function getGdal(
       const basePath = resolveAssetUrl(paths.js).replace(/\/gdal3\.js$/, '');
 
       report(options, 15, 'Initializing WASM…');
-      const initTimeoutMs = 180_000;
+      const initTimeoutMs = 300_000;
       gdalInstance = await Promise.race([
         initFn({
           path: basePath,
@@ -160,7 +160,7 @@ export async function getGdal(
             () =>
               reject(
                 new Error(
-                  'GIS engine timed out loading (~27 MB WASM). Check your network or try again later.',
+                  'GIS engine timed out loading. Try a hard refresh (Ctrl+F5) or check your network connection.',
                 ),
               ),
             initTimeoutMs,

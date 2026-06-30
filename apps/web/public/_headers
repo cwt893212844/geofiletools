@@ -1,2 +1,6 @@
 /*.wasm
   Content-Type: application/wasm
+
+/gdal/gdal3WebAssembly.wasm
+  Content-Type: application/wasm
+  Content-Encoding: br
