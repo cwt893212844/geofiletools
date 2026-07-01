@@ -25,6 +25,7 @@ if (-not $remote) {
 
 Write-Host "`nGitHub done. Deploying to Cloudflare Pages..."
 npm run build
+node scripts/prepare-pages-dist.mjs
 npx wrangler pages project create $repoName --production-branch main 2>$null
 npx wrangler pages deploy apps/web/dist --project-name $repoName --branch main
 
