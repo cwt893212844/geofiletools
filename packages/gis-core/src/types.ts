@@ -10,6 +10,10 @@ export interface ConvertOptions {
   sourceCrs?: string;
   targetCrs?: string;
   layerName?: string;
+  /** Force output geometry type (-nlt) for shapefile layers. */
+  geometryType?: string;
+  /** DXF/DWG often mixes geometry types; split into multiple shapefiles. */
+  shapefileCompat?: boolean;
 }
 
 export interface LayerInfo {

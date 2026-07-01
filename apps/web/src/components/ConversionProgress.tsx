@@ -24,7 +24,11 @@ export function ConversionProgress({ stage, progress, message, error }: Conversi
   const activeIndex = ['loading-engine', 'reading', 'converting', 'packaging', 'done'].indexOf(stage);
   const isDone = stage === 'done';
   const clampedProgress = Math.max(0, Math.min(100, isDone ? 100 : progress));
-  const headline = isError ? (message || labels[stage]) : isDone ? labels.done : message || labels[stage];
+  const headline = isError
+    ? labels.error
+    : isDone
+      ? labels.done
+      : message || labels[stage];
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">

@@ -13,6 +13,7 @@ import {
   type ConversionStage,
   type InspectResult,
   type OutputFormat,
+  type ConvertOptions,
 } from '@gis-tools/core';
 import { GDAL_PATHS } from '../lib/gdal-paths';
 import { ConversionProgress } from './ConversionProgress';
@@ -48,6 +49,31 @@ function modeToFormat(mode: ConverterMode): OutputFormat {
 
 function usesDwgPipeline(mode: ConverterMode): boolean {
   return mode === 'dwg-to-shp' || mode === 'dwg-to-geojson';
+}
+
+function usesCadInput(mode: ConverterMode): boolean {
+  return mode.startsWith('dxf-') || usesDwgPipeline(mode);
+}
+
+function gdalConvertOptions(mode: ConverterMode, outputFormat: OutputFormat): ConvertOptions {
+  const options: ConvertOptions = { outputFormat };
+  if (!usesCadInput(mode)) {
+    options.targetCrs = 'EPSG:4326';
+  }
+  if (usesCadInput(mode) && outputFormat === 'ESRI Shapefile') {
+    options.shapefileCompat = true;
+  }
+  return options;
+}
+
+function formatConversionError(caught: unknown): string {
+  if (caught instanceof Error && caught.message) return caught.message;
+  if (typeof caught === 'string' && caught.trim()) return caught.trim();
+  if (Array.isArray(caught)) {
+    const text = caught.map((item) => String(item)).join('; ').trim();
+    if (text) return text;
+  }
+  return 'Conversion failed.';
 }
 
 function usesLightweightKmlGpx(mode: ConverterMode): boolean {
@@ -102,7 +128,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       let inputGeoJsonText: string | undefined;
       let previewTextOverride: string | undefined;
       let previewViaFiles: File[] | undefined;
-      const deferMapPreview = mode === 'dwg-to-dxf';
+      const deferMapPreview = mode === 'dwg-to-dxf' || (usesCadInput(mode) && outputFormat === 'ESRI Shapefile');
 
       if (mode === 'dwg-to-dxf') {
         onProgress(40, 'Converting DWG to DXF…');
@@ -111,7 +137,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         fileName = dxfFile.name;
         onProgress(95, 'DXF ready');
       } else if (usesDwgPipeline(mode)) {
-        const dwgResult = await convertDwg(primary, { outputFormat, targetCrs: 'EPSG:4326' }, gdalOptions);
+        const dwgResult = await convertDwg(primary, gdalConvertOptions(mode, outputFormat), gdalOptions);
         blob = dwgResult.blob;
         previewViaFiles = [dwgResult.dxfFile];
         fileName = suggestedDownloadName(primary.name.replace(/\.dwg$/i, ''), outputFormat);
@@ -168,7 +194,25 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         onProgress(95, 'Done');
       } else {
         inspection = await inspect(inputFiles, gdalOptions);
-        blob = await convert(inputFiles, { outputFormat, targetCrs: 'EPSG:4326' }, gdalOptions);
+        if (usesCadInput(mode) && !inspection.layers.some((layer) => layer.crs)) {
+          inspection = {
+            ...inspection,
+            warnings: [
+              ...inspection.warnings,
+              'Drawing has no coordinate system; output keeps original CAD coordinates. Assign CRS in QGIS if locations look wrong.',
+            ],
+          };
+        }
+        if (usesCadInput(mode) && outputFormat === 'ESRI Shapefile') {
+          inspection = {
+            ...inspection,
+            warnings: [
+              ...inspection.warnings,
+              'CAD drawings mix geometry types; Shapefile ZIP contains separate point/line/polygon layers where present.',
+            ],
+          };
+        }
+        blob = await convert(inputFiles, gdalConvertOptions(mode, outputFormat), gdalOptions);
       }
 
       if (inspection) {
@@ -197,7 +241,11 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
             geojsonText = inputGeoJsonText.trim();
           } else {
             geojsonText = (
-              await toGeoJSON(previewViaFiles ?? inputFiles, 'EPSG:4326', previewOptions)
+              await toGeoJSON(
+                previewViaFiles ?? inputFiles,
+                usesCadInput(mode) ? undefined : 'EPSG:4326',
+                previewOptions,
+              )
             ).trim();
           }
 
@@ -237,7 +285,8 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       }
     } catch (caught) {
       setStage('error');
-      setError(caught instanceof Error ? caught.message : 'Conversion failed.');
+      setProgressMessage(null);
+      setError(formatConversionError(caught));
     }
   };
 

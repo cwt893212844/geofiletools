@@ -221,9 +221,10 @@ async function openDataset(
     const detail = result?.errors?.length
       ? formatGdalError(result.errors)
       : 'Unknown GDAL open error.';
-    throw new Error(
-      `GDAL could not open the input file(s): ${detail} Ensure .shp, .shx, and .dbf are included (or upload a .zip).`,
-    );
+    const shapefileHint = hasShp
+      ? ' Ensure .shp, .shx, and .dbf are included (or upload a .zip).'
+      : '';
+    throw new Error(`GDAL could not open the input file(s): ${detail}${shapefileHint}`);
   }
 
   report(options, 40, 'Dataset opened');
@@ -300,7 +301,7 @@ export function parseOgrinfoResult(info: unknown): Pick<InspectResult, 'layers' 
   };
 }
 
-function buildOgr2OgrOptions(options: ConvertOptions): string[] {
+export function buildOgr2OgrOptions(options: ConvertOptions): string[] {
   const opts = ['-f', options.outputFormat];
 
   if (options.sourceCrs) {
@@ -314,6 +315,9 @@ function buildOgr2OgrOptions(options: ConvertOptions): string[] {
   }
   if (options.outputFormat === 'ESRI Shapefile') {
     opts.push('-lco', 'ENCODING=UTF-8');
+    if (options.geometryType) {
+      opts.push('-nlt', options.geometryType);
+    }
   }
   if (options.outputFormat === 'GPKG') {
     opts.push('-lco', 'RASTER_TABLE=NO');
@@ -346,15 +350,24 @@ export async function convert(
   convertOptions: ConvertOptions,
   operationOptions?: GdalOperationOptions,
 ): Promise<Blob> {
+  if (convertOptions.outputFormat === 'ESRI Shapefile' && convertOptions.shapefileCompat) {
+    return convertCadToShapefileZip(files, convertOptions, operationOptions);
+  }
+
   const { Gdal, dataset } = await openDataset(files, operationOptions);
 
   try {
     report(operationOptions, 65, 'Converting…');
-    const output: OgrOutput = await Gdal.ogr2ogr(
-      dataset,
-      buildOgr2OgrOptions(convertOptions),
-      'converted',
-    );
+    let output: OgrOutput;
+    try {
+      output = await Gdal.ogr2ogr(
+        dataset,
+        buildOgr2OgrOptions(convertOptions),
+        'converted',
+      );
+    } catch (error) {
+      throw new Error(`Conversion failed: ${formatGdalError(error)}`);
+    }
 
     if (convertOptions.outputFormat === 'ESRI Shapefile') {
       report(operationOptions, 80, 'Packaging shapefile…');
@@ -389,6 +402,7 @@ async function zipShapefileOutput(
   Gdal: GdalInstance,
   output: OgrOutput,
   operationOptions?: GdalOperationOptions,
+  namePrefix?: string,
 ): Promise<Blob> {
   const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
@@ -404,7 +418,10 @@ async function zipShapefileOutput(
 
   for (const file of files) {
     const bytes: Uint8Array = await Gdal.getFileBytes(file.local);
-    const name = file.local.split('/').pop() ?? file.local;
+    const rawName = file.local.split('/').pop() ?? file.local;
+    const name = namePrefix
+      ? rawName.replace(/^(converted|dataset)/, namePrefix)
+      : rawName;
     zip.file(name, bytes);
   }
 
@@ -413,19 +430,102 @@ async function zipShapefileOutput(
   });
 }
 
-export async function toGeoJSON(
+type GeometryBucket = 'points' | 'lines' | 'polygons';
+
+function bucketGeometryType(type: string): GeometryBucket | null {
+  if (type === 'Point' || type === 'MultiPoint') return 'points';
+  if (type === 'LineString' || type === 'MultiLineString') return 'lines';
+  if (type === 'Polygon' || type === 'MultiPolygon') return 'polygons';
+  return null;
+}
+
+function splitFeaturesByGeometryType(features: GeoJSON.Feature[]): Record<GeometryBucket, GeoJSON.Feature[]> {
+  const buckets: Record<GeometryBucket, GeoJSON.Feature[]> = {
+    points: [],
+    lines: [],
+    polygons: [],
+  };
+
+  for (const feature of features) {
+    if (!feature.geometry) continue;
+    const bucket = bucketGeometryType(feature.geometry.type);
+    if (bucket) buckets[bucket].push(feature);
+  }
+
+  return buckets;
+}
+
+const CAD_SHAPEFILE_LAYERS: Array<{ bucket: GeometryBucket; nlt: string; label: string }> = [
+  { bucket: 'points', nlt: 'MULTIPOINT', label: 'points' },
+  { bucket: 'lines', nlt: 'MULTILINESTRING', label: 'lines' },
+  { bucket: 'polygons', nlt: 'MULTIPOLYGON', label: 'polygons' },
+];
+
+async function convertCadToShapefileZip(
   files: File[],
-  targetCrs = 'EPSG:4326',
+  convertOptions: ConvertOptions,
   operationOptions?: GdalOperationOptions,
-): Promise<string> {
-  const blob = await convert(
+): Promise<Blob> {
+  report(operationOptions, 60, 'Reading CAD geometry…');
+  const geojsonBlob = await convert(
     files,
     {
       outputFormat: 'GeoJSON',
-      targetCrs,
+      sourceCrs: convertOptions.sourceCrs,
+      targetCrs: convertOptions.targetCrs,
     },
     operationOptions,
   );
+
+  const collection = JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection;
+  const buckets = splitFeaturesByGeometryType(collection.features ?? []);
+  const layersToWrite = CAD_SHAPEFILE_LAYERS.filter((layer) => buckets[layer.bucket].length > 0);
+
+  if (!layersToWrite.length) {
+    throw new Error('No supported vector features found in CAD drawing.');
+  }
+
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+
+  for (const [index, layer] of layersToWrite.entries()) {
+    const progress = 68 + Math.round((index / layersToWrite.length) * 20);
+    report(operationOptions, progress, `Writing ${layer.label}…`);
+
+    const layerFile = new File(
+      [JSON.stringify({ type: 'FeatureCollection', features: buckets[layer.bucket] })],
+      `${layer.label}.geojson`,
+      { type: 'application/geo+json' },
+    );
+
+    const layerZip = await convert([layerFile], {
+      outputFormat: 'ESRI Shapefile',
+      geometryType: layer.nlt,
+    }, operationOptions);
+
+    const inner = await JSZip.loadAsync(await layerZip.arrayBuffer());
+    for (const [path, entry] of Object.entries(inner.files)) {
+      if (entry.dir) continue;
+      const baseName = path.split('/').pop() ?? path;
+      const renamed = baseName.replace(/^(converted|dataset)/, layer.label);
+      zip.file(renamed, await entry.async('uint8array'));
+    }
+  }
+
+  report(operationOptions, 92, 'Packaging shapefile…');
+  return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }, (metadata) => {
+    report(operationOptions, 92 + (metadata.percent / 100) * 7, 'Packaging shapefile…');
+  });
+}
+
+export async function toGeoJSON(
+  files: File[],
+  targetCrs?: string,
+  operationOptions?: GdalOperationOptions,
+): Promise<string> {
+  const convertOptions: ConvertOptions = { outputFormat: 'GeoJSON' };
+  if (targetCrs) convertOptions.targetCrs = targetCrs;
+  const blob = await convert(files, convertOptions, operationOptions);
   return blob.text();
 }
 

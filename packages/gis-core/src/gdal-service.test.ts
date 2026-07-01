@@ -1,5 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { parseOgrinfoResult } from './gdal-service';
+import { buildOgr2OgrOptions, parseOgrinfoResult } from './gdal-service';
+
+describe('buildOgr2OgrOptions', () => {
+  it('omits target CRS when not provided (CAD drawings without SRS)', () => {
+    const opts = buildOgr2OgrOptions({ outputFormat: 'ESRI Shapefile' });
+    expect(opts).not.toContain('-t_srs');
+    expect(opts).not.toContain('EPSG:4326');
+  });
+
+  it('includes target CRS when provided', () => {
+    const opts = buildOgr2OgrOptions({ outputFormat: 'GeoJSON', targetCrs: 'EPSG:4326' });
+    expect(opts).toContain('-t_srs');
+    expect(opts).toContain('EPSG:4326');
+  });
+
+  it('adds explicit geometry type for shapefile layers', () => {
+    const opts = buildOgr2OgrOptions({
+      outputFormat: 'ESRI Shapefile',
+      geometryType: 'MULTIPOLYGON',
+    });
+    expect(opts).toContain('-nlt');
+    expect(opts).toContain('MULTIPOLYGON');
+  });
+});
 
 describe('parseOgrinfoResult', () => {
   it('parses gdal3.js JSON ogrinfo output', () => {

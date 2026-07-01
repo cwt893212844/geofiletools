@@ -15,19 +15,21 @@
 ## Commands
 
 ```bash
-cd "e:\000AI变现\06-AI写网站"
+cd "e:\000AI变现\06-矢量转换网站"
 npm install
 npm run dev      # http://localhost:4321
 npm test         # packages/gis-core vitest（14 tests）
 npm run build    # → apps/web/dist
+node scripts/prepare-pages-dist.mjs   # 生产：wasm→gzip，删明文 .wasm
+npx wrangler pages deploy apps/web/dist --project-name geofiletools --branch main
 ```
 
 ## 已完成功能
 
-### 转换页（10）
+### 转换页（11）
 - `/convert/dxf-to-shp`, `dxf-to-geojson`
 - `/convert/shp-to-geojson`, `geojson-to-shp`, `geojson-to-gpkg`, `geojson-to-kml`
-- `/convert/dwg-to-shp`, `dwg-to-geojson`
+- `/convert/dwg-to-dxf`, `dwg-to-shp`, `dwg-to-geojson`
 - `/convert/kml-to-geojson`, `gpx-to-geojson`
 
 ### 工具页（2）
@@ -37,68 +39,91 @@ npm run build    # → apps/web/dist
 ### 核心模块（packages/gis-core）
 - `shapefile-to-geojson.ts` — shpjs 直读；**内容魔数识别**；GBK/CP936；**.prj → WGS84**
 - `geojson-normalize.ts` — GeoJSON 转 GDAL 前规范化：嵌套属性→JSON 字符串、ArcGIS `attributes` 兼容、字段名清洗；`prepareGeoJsonInput` 含预览用 WGS84 重投影
-- `gdal-service.ts` — GDAL 懒加载；GeoJSON→SHP `ENCODING=UTF-8`；GeoJSON→GPKG `RASTER_TABLE=NO`
+- `gdal-service.ts` — GDAL 懒加载；GeoJSON→SHP `ENCODING=UTF-8`；GeoJSON→GPKG `RASTER_TABLE=NO`；WASM 初始化 5min 超时
 - `file-grouper.ts` — SHP 分组、ZIP、`sanitizeFilesForGdal`、`isShapefileUpload`
 - `coordinate.ts` — 坐标转换 + `reprojectFeatureCollection` / `detectGeoJsonCrs` / `looksLikeGeographic` / EPSG:4490
-- `dwg-pipeline.ts` — DWG→DXF→GDAL
+- `dwg-pipeline.ts` — DWG→DXF→GDAL（`dwgToDxfFile` 可单独用于 dwg-to-dxf 页）
 - `kml-gpx.ts` — KML/KMZ/GPX ↔ GeoJSON；`geoJSONToKml` 强制 WGS84
 
 ### UI
-- `ConverterApp` — **全部 10 个转换器**转换后自动地图范围预览；`geojson-to-*` 用 `prepareGeoJsonInput`
-- `FileDropzone` — **v7 单 window drop 处理器** + `getDroppedFiles`（items 兜底）；框内仅负责变绿视觉反馈
-- `ConversionProgress`, `DownloadButton`, `MapPreview`, `FormatFAQ`
+- `ConverterApp` — 转换后地图预览；`geojson-to-*` 用 `prepareGeoJsonInput`；**dwg-to-dxf 跳过 GDAL 地图预览**
+- `FileDropzone` — **v7 单 window drop 处理器** + `getDroppedFiles`（items 兜底）
+- `ConversionProgress` — `done` 状态锁定 100% 文案，防后台预览回退进度条
+- `DownloadButton`, `MapPreview`, `FormatFAQ`
 - **布局**：转换页/工具页 `mx-auto max-w-4xl` 居中
 - SEO：sitemap、JSON-LD、robots.txt
 
-### 部署配置
-- 根目录 `vercel.json` + `apps/web/vercel.json`
-- `site`：`https://geofiletools.com`（已上线）
+### 部署（Cloudflare Pages，非 Vercel 主用）
+- **域名**：https://geofiletools.com（Cloudflare Registrar）
+- **GitHub**：https://github.com/cwt893212844/geofiletools
+- **Pages 项目**：`geofiletools`（`wrangler.toml` 在仓库根）
+- **GDAL WASM 生产链路**（Pages 单文件 25 MiB 限制）：
+  - 构建后 `scripts/prepare-pages-dist.mjs` 将 `gdal3WebAssembly.wasm` gzip 为 `.wasm.gz`（~8.7MB），删除明文 `.wasm`
+  - `functions/_middleware.js` 拦截 `/gdal/gdal3WebAssembly.wasm`，从 ASSETS 读 `.wasm.gz` 边缘解压后返回（魔数 `00 61 73 6d`）
+  - 本地 dev 仍用 `public/gdal/` 明文 wasm；`apps/web/src/lib/gdal-paths.ts` 同源 `/gdal/*`
+- `apps/web/public/_headers` — wasm MIME + `.wasm.gz` content-type
+- 根目录 `vercel.json` 保留备用，当前主部署 Cloudflare
 
-## 关键修复（2026-06-27）
+## 关键修复
 
-1. **SHP→GeoJSON（shpjs）**：魔数识别、主线程直解析、WGS84 重投影；坏 SHP（扩展名与内容不符）有明确报错
-2. **GeoJSON→GPKG/SHP/KML**：`geojson-normalize.ts` 保留属性 + 地图预览重投影；不再丢 nested/ArcGIS 字段
-3. **全站地图预览**：10 个转换器转换完均 fit 范围（含 geojson→gpkg 预览输入 GeoJSON）
-4. **拖拽（v7）**：
-   - 曾用 zone `stopPropagation` + window 跳过 zone 内 drop → **框内变绿但 files 为空、无反应**
-   - 现改为 **单一 `window` drop 处理**，不用 stopPropagation；`dataTransfer.items` 兜底
-   - `BaseLayout` 仅 inline **dragover** preventDefault（**不要** inline drop，会清空 dataTransfer）
-   - 勿拖到浏览器地址栏/标签栏（会打开 `file://` 原文）
-5. **Viewer**：SHP 预览走 shpjs 与转换页一致
-6. **坐标工具**：Result 旁 Copy 按钮（6 位小数 `x, y`）
-7. **页面居中**：`mx-auto max-w-4xl`
+### 2026-06-27
+1. SHP→GeoJSON（shpjs）：魔数识别、WGS84 重投影
+2. GeoJSON→GPKG/SHP/KML：属性保留 + 地图预览重投影
+3. 全站地图预览 fit 范围
+4. 拖拽 v7：单一 `window` drop；`BaseLayout` 仅 dragover inline
+5. Viewer SHP 走 shpjs；坐标工具 Copy；页面居中
+
+### 2026-06-29 ~ 2026-07-01（部署 + GDAL + DWG）
+1. **GitHub + Cloudflare Pages** 上线，`site` / JSON-LD → `geofiletools.com`
+2. **DWG→DXF** 新页 `/convert/dwg-to-dxf`；不阻塞 GDAL 预览/inspect
+3. **DWG→DXF 卡顿**：去掉同步 `inspect` 与后台地图预览（GDAL ~27MB 国内易卡死）
+4. **GDAL WASM 部署演进**（教训）：
+   - jsDelivr 27MB 超时 ❌
+   - brotli 侧车 + 客户端 `DecompressionStream('br')` — 部分浏览器不支持 br ❌
+   - gzip 侧车 + 客户端解压 — `wasmBinary` 注入预构建 gdal3 失败，CDN 残留压缩 `.wasm` → `CompileError` magic word ❌
+   - **最终方案**：`functions/_middleware.js` 边缘 gzip 解压 ✅（2026-07-01 验证通过）
+5. `ConversionProgress`：`stage===done` 时强制 100% / "Conversion complete"
 
 ## 约束与限制
 
 - 单文件上限 **30MB**
-- 纯浏览器处理，无服务端
+- 纯浏览器处理，无业务服务端（GDAL wasm 由 Pages Function 边缘解压，非用户数据上传）
 - DWG 含 **GPL-3.0**，商用前需合规评估
-- 首次 GDAL 转换 ~15MB WASM；`useWorker: false` 大文件可能卡顿
+- 首次 GDAL 加载：下载 ~9MB gzip + 边缘/浏览器解压 + WASM 编译，**1～2 分钟**正常；`useWorker: false` 大文件可能卡顿
 - DXF/DWG 无 CRS 时假设 WGS84
-- CGCS2000→WGS84 厘米级差异，Web 地图可接受
+- Cloudflare **R2 未启用**（账户需 Dashboard 手动开）；当前不依赖 R2
+
+### 2026-07-01（DXF→SHP 实机修复）
+1. **根因**：DXF 无 CRS 时强推 `-t_srs EPSG:4326` → GDAL 报错终止；CAD 混合点/线/面无法写入单一 Shapefile
+2. **修复**：CAD（DXF/DWG）转换**不重投影**；SHP 走 GeoJSON 中转后按几何类型拆成 `points/lines/polygons` 多层 ZIP
+3. **UI**：错误态显示真实 GDAL 文案；`done` 后不再用旧 progress message 当标题
+4. **验收**：`北山村JMD-201612.dxf`（18MB）本地 Playwright 实测 Conversion complete ✅
 
 ## 验收状态
 
-- [x] `npm test` 14 passed（含 shapefile + geojson-normalize）
-- [x] `npm run build` 13 页静态站
-- [x] SHP 四件套拖拽 + 转换 + 地图预览（坏 SHP 为源文件问题）
-- [ ] 拖拽 v7 实机复测（框内/页面任意处松手均应开始转换）
-- [ ] geojson→gpkg 实机复测（属性表 + 地图预览）
-- [ ] DXF/DWG、kml/gpx 等其他格式
-- [ ] 部署公网 + 真实域名
+- [x] `npm test` 14 passed
+- [x] `npm run build` 14 页静态站
+- [x] GitHub push + Cloudflare Pages 部署
+- [x] 域名 `geofiletools.com` 绑定
+- [x] `/gdal/gdal3WebAssembly.wasm` 生产返回合法 WASM（middleware）
+- [x] DWG→DXF 页上线
+- [ ] **实机复测**（强刷 Ctrl+F5 后）：DXF→SHP 生产环境、DWG→DXF、geojson→gpkg、拖拽 v7
+- [ ] Cloudflare Pages **Connect Git** 自动部署（当前 wrangler CLI 手动 deploy）
+- [ ] Google Search Console 提交 sitemap
 - [ ] AdSense（`public/ads.txt` 占位）
 
 ## Next Steps（新对话优先）
 
-1. **部署** Vercel/Cloudflare Pages，改 `astro.config.mjs` `site` + `robots.txt`
-2. **实机复测** geojson→gpkg、拖拽 v7、DXF/DWG
-3. **可选增强**：
+1. **实机验收**：用 `北山村JMD-201612.dxf`、`经开区管网图.dwg` 等测 DXF→SHP、DWG→DXF/DWG→SHP
+2. **Dashboard**：Pages 连 GitHub `geofiletools` 自动构建（build: `npm run build` + `node scripts/prepare-pages-dist.mjs`，output: `apps/web/dist`，Node 22）
+3. **变现**：Search Console、AdSense、GIS 联盟
+4. **可选增强**：
    - DXF/DWG CRS 手动选择
    - Viewer 要素点击属性
-   - 坐标工具 **CGCS2000** EPSG
+   - 坐标工具 CGCS2000（EPSG:4490）
    - GDAL Worker 化
    - geojson→shp GBK 编码选项
-4. **变现**：sitemap 提交、AdSense、GIS 联盟
+   - R2 托管 wasm（若 middleware 不稳定可备选）
 
 ## 架构备忘
 
@@ -106,7 +131,9 @@ npm run build    # → apps/web/dist
 SHP→GeoJSON：shpjs + 魔数 + proj4→WGS84
 GeoJSON→*：prepareGeoJsonInput 规范化 → GDAL ogr2ogr
 KML/GPX→GeoJSON：@tmcw/togeojson
-DWG：cadview/dwg → DXF → GDAL
+DWG：cadview/dwg → DXF → GDAL（dwg-to-dxf 仅前两步）
+DWG→DXF：dwgToDxfFile，无 GDAL 预览
+生产 GDAL WASM：dist 仅 .wasm.gz → middleware 提供 /gdal/*.wasm
 拖拽：window 单 drop 处理器；BaseLayout 仅 dragover inline
 地图：OpenLayers EPSG:4326，自动 fit extent
 ```
