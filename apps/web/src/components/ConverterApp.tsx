@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   convert,
   convertDwg,
@@ -76,6 +76,9 @@ function formatConversionError(caught: unknown): string {
   return 'Conversion failed.';
 }
 
+const MAP_PREVIEW_MAX_FEATURES = 8_000;
+const MAP_PREVIEW_MAX_BYTES = 8 * 1024 * 1024;
+
 function usesLightweightKmlGpx(mode: ConverterMode): boolean {
   return mode === 'kml-to-geojson' || mode === 'gpx-to-geojson';
 }
@@ -98,16 +101,19 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
   const [resultName, setResultName] = useState<string>('converted');
   const [previewGeoJSON, setPreviewGeoJSON] = useState<string | null>(null);
   const [report, setReport] = useState<InspectResult | null>(null);
+  const conversionDoneRef = useRef(false);
 
   const outputFormat = useMemo(() => modeToFormat(mode), [mode]);
 
   const onProgress = (value: number, message?: string) => {
+    if (conversionDoneRef.current) return;
     setProgress(value);
     setStage(stageFromProgress(value));
     if (message) setProgressMessage(message);
   };
 
   const runConversion = async (inputFiles: File[]) => {
+    conversionDoneRef.current = false;
     setFiles(inputFiles);
     setError(null);
     setResultBlob(null);
@@ -224,14 +230,12 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
 
       onProgress(100, 'Conversion complete');
       setStage('done');
+      conversionDoneRef.current = true;
 
       const loadPreview = async () => {
         try {
-          if (!deferMapPreview) {
-            onProgress(96, 'Rendering map preview…');
-          }
           let geojsonText: string;
-          const previewOptions = deferMapPreview ? { paths: GDAL_PATHS } : gdalOptions;
+          const previewOptions = { paths: GDAL_PATHS };
 
           if (previewTextOverride) {
             geojsonText = previewTextOverride;
@@ -247,6 +251,32 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
                 previewOptions,
               )
             ).trim();
+          }
+
+          const skipLargePreview =
+            blob.size > MAP_PREVIEW_MAX_BYTES ||
+            (() => {
+              try {
+                const collection = JSON.parse(geojsonText) as GeoJSON.FeatureCollection;
+                return (collection.features?.length ?? 0) > MAP_PREVIEW_MAX_FEATURES;
+              } catch {
+                return false;
+              }
+            })();
+
+          if (skipLargePreview) {
+            setReport((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    warnings: [
+                      ...prev.warnings,
+                      'Map preview skipped for large output; download the file to inspect in QGIS.',
+                    ],
+                  }
+                : prev,
+            );
+            return;
           }
 
           setPreviewGeoJSON(geojsonText || '{"type":"FeatureCollection","features":[]}');
@@ -278,10 +308,8 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         }
       };
 
-      if (deferMapPreview) {
-        // DWG→DXF: skip map preview (GDAL WASM ~27 MB, unreliable on slow networks)
-      } else {
-        await loadPreview();
+      if (!deferMapPreview) {
+        void loadPreview();
       }
     } catch (caught) {
       setStage('error');
