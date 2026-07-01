@@ -1,3 +1,5 @@
+import JSZip from 'jszip';
+
 const VECTOR_EXTENSIONS = new Set([
   'gpkg',
   'shp',
@@ -71,7 +73,6 @@ export function groupFilesByDataset(files: File[]): File[][] {
 }
 
 export async function expandZipFiles(files: File[]): Promise<File[]> {
-  const JSZip = (await import('jszip')).default;
   const expanded: File[] = [];
 
   for (const file of files) {
@@ -140,7 +141,6 @@ export async function sanitizeFilesForGdal(files: File[]): Promise<File[]> {
 }
 
 async function shapefileComponentsToZip(files: File[]): Promise<File> {
-  const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
 
   for (const file of files) {

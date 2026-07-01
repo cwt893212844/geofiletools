@@ -11,6 +11,7 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
     optimizeDeps: {
+      include: ['jszip'],
       exclude: [
         'gdal3.js',
         '@gis-tools/core',

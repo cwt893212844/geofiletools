@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
@@ -404,7 +405,6 @@ async function zipShapefileOutput(
   operationOptions?: GdalOperationOptions,
   namePrefix?: string,
 ): Promise<Blob> {
-  const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
   const files = output.all?.length
     ? output.all
@@ -485,7 +485,6 @@ async function convertCadToShapefileZip(
     throw new Error('No supported vector features found in CAD drawing.');
   }
 
-  const JSZip = (await import('jszip')).default;
   const zip = new JSZip();
 
   for (const [index, layer] of layersToWrite.entries()) {

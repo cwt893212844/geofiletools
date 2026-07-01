@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { kml, gpx } from '@tmcw/togeojson';
 import { convert } from './gdal-service';
 
@@ -6,7 +7,6 @@ function readFileAsText(file: File): Promise<string> {
 }
 
 async function readKmz(file: File): Promise<string> {
-  const JSZip = (await import('jszip')).default;
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const kmlEntry =
     Object.values(zip.files).find((entry) => !entry.dir && entry.name.toLowerCase().endsWith('.kml')) ??
