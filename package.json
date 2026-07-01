@@ -10,7 +10,7 @@
     "build": "npm run build -w apps/web",
     "preview": "npm run preview -w apps/web",
     "test": "npm run test -w @gis-tools/core",
-    "postinstall": "node scripts/copy-gdal-assets.mjs"
+    "postinstall": "node scripts/copy-gdal-assets.mjs && node scripts/copy-dwg-wasm-assets.mjs"
   },
   "engines": {
     "node": ">=22.12.0"

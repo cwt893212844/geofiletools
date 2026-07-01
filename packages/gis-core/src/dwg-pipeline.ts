@@ -1,21 +1,46 @@
 import { convert, suggestedDownloadName, toGeoJSON } from './gdal-service';
 import type { ConvertOptions, GdalOperationOptions } from './types';
 
+function libredwgWasmBase(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return new URL('/libredwg', window.location.origin).pathname;
+}
+
+function formatDwgError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
+async function convertWithLibreDwg(buffer: ArrayBuffer): Promise<Uint8Array> {
+  const { LibreDwg } = await import('@mlightcad/libredwg-web');
+  const libredwg = await LibreDwg.create(libredwgWasmBase());
+  const dxfBytes = libredwg.dwg_write_dxf(new Uint8Array(buffer));
+  if (!dxfBytes) {
+    throw new Error('LibreDWG could not convert this DWG. Try re-saving from AutoCAD or BricsCAD.');
+  }
+  return dxfBytes;
+}
+
 export async function dwgToDxfBytes(dwgFile: File): Promise<Uint8Array> {
   const buffer = await dwgFile.arrayBuffer();
+  let primaryError: unknown;
 
   try {
     const { convertDwgToDxf } = await import('@cadview/dwg');
     const dxfString = await convertDwgToDxf(buffer, { timeout: 120_000 });
     return new TextEncoder().encode(dxfString);
-  } catch {
-    const { LibreDwg } = await import('@mlightcad/libredwg-web');
-    const libredwg = await LibreDwg.create();
-    const dxfBytes = libredwg.dwg_write_dxf(new Uint8Array(buffer));
-    if (!dxfBytes) {
-      throw new Error('Failed to read DWG file. Try saving as DXF from AutoCAD or BricsCAD.');
-    }
-    return dxfBytes;
+  } catch (error) {
+    primaryError = error;
+  }
+
+  try {
+    return await convertWithLibreDwg(buffer);
+  } catch (fallbackError) {
+    const primary = formatDwgError(primaryError);
+    const fallback = formatDwgError(fallbackError);
+    throw new Error(
+      `Failed to read DWG file. ${primary}${fallback !== primary ? ` LibreDWG fallback: ${fallback}` : ''}`,
+    );
   }
 }
 
@@ -39,7 +64,7 @@ export async function convertDwg(
   };
 }
 
-export async function dwgToGeoJSON(dwgFile: File, targetCrs = 'EPSG:4326'): Promise<string> {
+export async function dwgToGeoJSON(dwgFile: File, targetCrs?: string): Promise<string> {
   const dxfFile = await dwgToDxfFile(dwgFile);
   return toGeoJSON([dxfFile], targetCrs);
 }

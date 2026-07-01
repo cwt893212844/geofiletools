@@ -11,7 +11,24 @@ export default defineConfig({
   vite: {
     plugins: [tailwindcss()],
     optimizeDeps: {
-      exclude: ['gdal3.js', '@gis-tools/core'],
+      exclude: [
+        'gdal3.js',
+        '@gis-tools/core',
+        '@cadview/dwg',
+        '@cadview/core',
+        '@mlightcad/libredwg-web',
+      ],
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('@cadview/dwg') || id.includes('@mlightcad/libredwg-web')) {
+              return 'dwg-wasm';
+            }
+          },
+        },
+      },
     },
     server: {
       fs: {
