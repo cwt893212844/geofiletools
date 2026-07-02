@@ -24,8 +24,18 @@ export default defineConfig({
       rollupOptions: {
         output: {
           manualChunks(id) {
+            if (
+              id.includes('packages/gis-core') ||
+              id.includes('@gis-tools/core') ||
+              id.includes('node_modules/jszip')
+            ) {
+              return 'gis-core';
+            }
             if (id.includes('@cadview/dwg') || id.includes('@mlightcad/libredwg-web')) {
               return 'dwg-wasm';
+            }
+            if (id.includes('node_modules/gdal3.js')) {
+              return 'gdal3';
             }
           },
         },

@@ -3,3 +3,6 @@
 
 /gdal/gdal3WebAssembly.wasm.gz
   Content-Type: application/gzip
+
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
