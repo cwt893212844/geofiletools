@@ -1,4 +1,5 @@
 import { convert, suggestedDownloadName, toGeoJSON } from './gdal-service';
+import { assertDxfChineseReadable, repairDxfCp936Strings } from './dxf-gbk-repair';
 import type { ConvertOptions, GdalOperationOptions } from './types';
 
 function libredwgWasmBase(): string | undefined {
@@ -46,8 +47,10 @@ export async function dwgToDxfBytes(dwgFile: File): Promise<Uint8Array> {
 
 export async function dwgToDxfFile(dwgFile: File): Promise<File> {
   const bytes = await dwgToDxfBytes(dwgFile);
+  const repaired = repairDxfCp936Strings(bytes);
+  assertDxfChineseReadable(repaired, dwgFile.name);
   const baseName = dwgFile.name.replace(/\.dwg$/i, '') || 'converted';
-  return new File([bytes], `${baseName}.dxf`, { type: 'application/dxf' });
+  return new File([repaired], `${baseName}.dxf`, { type: 'application/dxf' });
 }
 
 export async function convertDwg(

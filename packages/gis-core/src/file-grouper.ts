@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { assertDxfChineseReadable, repairDxfCp936Strings } from './dxf-gbk-repair';
 
 const VECTOR_EXTENSIONS = new Set([
   'gpkg',
@@ -127,7 +128,12 @@ export async function sanitizeFilesForGdal(files: File[]): Promise<File[]> {
 
   for (const [index, file] of ordered.entries()) {
     const ext = getExtension(file.name) || 'bin';
-    const bytes = await file.arrayBuffer();
+    let bytes = await file.arrayBuffer();
+    if (ext === 'dxf') {
+      const repaired = repairDxfCp936Strings(new Uint8Array(bytes));
+      assertDxfChineseReadable(repaired, file.name);
+      bytes = repaired.buffer.slice(repaired.byteOffset, repaired.byteOffset + repaired.byteLength);
+    }
     const name = hasShp ? `dataset.${ext}` : `dataset_${index}.${ext}`;
     sanitized.push(
       new File([bytes], name, {

@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat, ShapefileEncoding } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
+import { assertDxfChineseReadable, DWG_CHINESE_LOST_ERROR, repairDxfCp936Strings, scanGeoJsonForReplacementChars } from './dxf-gbk-repair';
 import { normalizeGeoJsonTextProperties, shapefileCpgForEncoding, transcodeDbfUtf8ToGbk } from './text-encoding';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,6 +75,23 @@ async function gdalOpen(
   openOptions: string[],
 ): Promise<{ datasets?: unknown[]; errors?: unknown[] }> {
   if (!prepared.shapefile) {
+    const attempts = [
+      openOptions,
+      [...openOptions, 'ENCODING=GBK'],
+      [...openOptions, 'ENCODING=UTF-8'],
+      [],
+    ];
+    const seen = new Set<string>();
+
+    for (const opts of attempts) {
+      const key = opts.join('|');
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const opened = await tryGdalOpen(Gdal, prepared.files, opts);
+      if (opened) return opened;
+    }
+
     return Gdal.open(prepared.files, openOptions);
   }
 
@@ -510,6 +528,10 @@ async function convertCadToShapefileZip(
   const collection = normalizeGeoJsonTextProperties(
     JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection,
   );
+  const replacementHits = scanGeoJsonForReplacementChars(collection);
+  if (replacementHits > 0) {
+    throw new Error(DWG_CHINESE_LOST_ERROR);
+  }
   const buckets = splitFeaturesByGeometryType(collection.features ?? []);
   const layersToWrite = CAD_SHAPEFILE_LAYERS.filter((layer) => buckets[layer.bucket].length > 0);
 
