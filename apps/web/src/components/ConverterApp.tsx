@@ -1,25 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
-import {
-  convert,
-  convertDwg,
-  convertShapefileToGeoJSON,
-  dwgToDxfFile,
-  geoJSONToKml,
-  inspect,
-  kmlOrGpxFileToGeoJSONBlob,
-  prepareGeoJsonInput,
-  suggestedDownloadName,
-  toGeoJSON,
-  type ConversionStage,
-  type InspectResult,
-  type OutputFormat,
-  type ConvertOptions,
-} from '@gis-tools/core';
+import type { ConversionStage } from '../lib/conversion-stage';
+import { loadGisCore } from '../lib/gis-core-client';
 import { GDAL_PATHS } from '../lib/gdal-paths';
 import { ConversionProgress } from './ConversionProgress';
 import { DownloadButton } from './DownloadButton';
 import { FileDropzone } from './FileDropzone';
 import { MapPreview } from './MapPreview';
+
+import type { ConvertOptions, InspectResult, OutputFormat } from '@gis-tools/core';
 
 export type ConverterMode =
   | 'dxf-to-shp'
@@ -120,10 +108,26 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
     setPreviewGeoJSON(null);
     setReport(null);
     setProgress(0);
-    setProgressMessage('Starting…');
+    setProgressMessage('Loading converter…');
     setStage('loading-engine');
 
     try {
+      const gis = await loadGisCore();
+      const {
+        convert,
+        convertDwg,
+        convertShapefileToGeoJSON,
+        dwgToDxfFile,
+        geoJSONToKml,
+        inspect,
+        kmlOrGpxFileToGeoJSONBlob,
+        prepareGeoJsonInput,
+        suggestedDownloadName,
+        toGeoJSON,
+      } = gis;
+
+      setProgressMessage('Starting…');
+
       const primary = inputFiles[0];
       if (!primary) throw new Error('No file selected.');
 

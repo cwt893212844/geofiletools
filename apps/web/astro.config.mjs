@@ -10,8 +10,16 @@ export default defineConfig({
   integrations: [react(), sitemap()],
   vite: {
     plugins: [tailwindcss()],
+    resolve: {
+      alias: {
+        buffer: 'buffer',
+      },
+    },
+    define: {
+      global: 'globalThis',
+    },
     optimizeDeps: {
-      include: ['jszip'],
+      include: ['buffer', 'jszip'],
       exclude: [
         'gdal3.js',
         '@gis-tools/core',

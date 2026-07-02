@@ -1,4 +1,4 @@
-import type { ConversionStage } from '@gis-tools/core';
+import type { ConversionStage } from '../lib/conversion-stage';
 
 const labels: Record<ConversionStage, string> = {
   idle: 'Ready',
