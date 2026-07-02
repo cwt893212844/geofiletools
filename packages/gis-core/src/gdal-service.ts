@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat, ShapefileEncoding } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
-import { normalizeGeoJsonTextProperties, transcodeDbfUtf8ToGbk } from './text-encoding';
+import { normalizeGeoJsonTextProperties, shapefileCpgForEncoding, transcodeDbfUtf8ToGbk } from './text-encoding';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GdalInstance = any;
@@ -452,7 +452,7 @@ async function zipShapefileOutput(
         .map((file) => file.local.split('/').pop() ?? file.local)
         .find((name) => name.toLowerCase().endsWith('.shp'))
         ?.replace(/\.shp$/i, '') ?? namePrefix ?? 'converted';
-    zip.file(`${shpName}.cpg`, shapefileEncoding === 'CP936' ? 'CP936' : 'UTF-8');
+    zip.file(`${shpName}.cpg`, shapefileCpgForEncoding(shapefileEncoding));
   }
 
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }, (metadata) => {
@@ -529,11 +529,10 @@ async function convertCadToShapefileZip(
       { type: 'application/geo+json' },
     );
 
-    const shpEncoding = resolveShapefileEncoding(convertOptions);
     const layerZip = await convert([layerFile], {
       outputFormat: 'ESRI Shapefile',
       geometryType: layer.nlt,
-      shapefileEncoding: shpEncoding,
+      shapefileEncoding: 'CP936',
     }, operationOptions);
 
     const inner = await JSZip.loadAsync(await layerZip.arrayBuffer());
@@ -541,7 +540,14 @@ async function convertCadToShapefileZip(
       if (entry.dir) continue;
       const baseName = path.split('/').pop() ?? path;
       const renamed = baseName.replace(/^(converted|dataset)/, layer.label);
-      zip.file(renamed, await entry.async('uint8array'));
+      let bytes = await entry.async('uint8array');
+      if (renamed.toLowerCase().endsWith('.dbf')) {
+        bytes = transcodeDbfUtf8ToGbk(bytes);
+      }
+      zip.file(renamed, bytes);
+      if (renamed.toLowerCase().endsWith('.shp')) {
+        zip.file(renamed.replace(/\.shp$/i, '.cpg'), shapefileCpgForEncoding('CP936'));
+      }
     }
   }
 

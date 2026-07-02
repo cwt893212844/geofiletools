@@ -47,9 +47,18 @@ describe('text-encoding', () => {
     const utf8Field = iconv.encode('规划验收', 'utf8');
     const dbf = buildMinimalDbf(utf8Field);
     const transcoded = transcodeDbfUtf8ToGbk(dbf);
+    expect(transcoded[29]).toBe(0x57);
     const gbkSlice = transcoded.subarray(66, 66 + 20);
     let end = gbkSlice.length;
     while (end > 0 && (gbkSlice[end - 1] === 0x20 || gbkSlice[end - 1] === 0x00)) end -= 1;
     expect(iconv.decode(gbkSlice.subarray(0, end), 'gbk')).toBe('规划验收');
+  });
+
+  it('is idempotent for DBF that is already GBK', () => {
+    const utf8Field = iconv.encode('北山村', 'utf8');
+    const dbf = buildMinimalDbf(utf8Field);
+    const once = transcodeDbfUtf8ToGbk(dbf);
+    const twice = transcodeDbfUtf8ToGbk(once);
+    expect(Array.from(once)).toEqual(Array.from(twice));
   });
 });

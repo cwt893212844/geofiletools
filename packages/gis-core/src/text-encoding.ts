@@ -1,6 +1,10 @@
 import iconv from 'iconv-lite';
 
 const CJK_RE = /[\u3400-\u9fff]/;
+/** dBASE VII language driver ID for Simplified Chinese (CP936 / GBK). */
+const DBF_LDID_CP936 = 0x57;
+
+export const SHAPEFILE_CPG_GBK = 'GBK';
 
 export function hasCjk(text: string): boolean {
   return CJK_RE.test(text);
@@ -43,24 +47,37 @@ export function normalizeGeoJsonTextProperties(
 }
 
 export function encodeGbk(text: string): Uint8Array {
-  return Uint8Array.from(iconv.encode(text, 'gbk'));
+  return Uint8Array.from(iconv.encode(normalizeUnicodeText(text), 'gbk'));
+}
+
+function isValidUtf8(bytes: Uint8Array): boolean {
+  try {
+    const decoded = new TextDecoder('utf8', { fatal: true }).decode(bytes);
+    return !decoded.includes('\uFFFD');
+  } catch {
+    return false;
+  }
 }
 
 export function decodeFieldBytes(bytes: Uint8Array): string {
   const trimmed = trimTrailingSpaces(bytes);
   if (!trimmed.length) return '';
 
-  const utf8 = iconv.decode(trimmed, 'utf8');
-  if (hasCjk(utf8) && !utf8.includes('\uFFFD')) return utf8;
+  if (isValidUtf8(trimmed)) {
+    const utf8 = iconv.decode(trimmed, 'utf8');
+    if (hasCjk(utf8)) return normalizeUnicodeText(utf8);
+    if (utf8 && /^[\x20-\x7e]+$/.test(utf8)) return utf8;
+  }
 
   try {
     const gbk = iconv.decode(trimmed, 'gbk');
     if (hasCjk(gbk)) return gbk;
+    if (gbk && /^[\x20-\x7e]+$/.test(gbk)) return gbk;
   } catch {
     // fall through
   }
 
-  return normalizeUnicodeText(utf8);
+  return normalizeUnicodeText(iconv.decode(trimmed, 'utf8'));
 }
 
 function trimTrailingSpaces(bytes: Uint8Array): Uint8Array {
@@ -105,7 +122,18 @@ function parseDbfFields(dbf: Uint8Array): {
   return { fields, headerLength, recordLength, recordCount };
 }
 
-/** GDAL WASM reliably writes UTF-8 DBF; transcode to GBK bytes for QGIS/ArcGIS CN. */
+function fieldBytesAlreadyGbk(slice: Uint8Array, text: string): boolean {
+  if (!text || !hasCjk(text)) return false;
+  const encoded = encodeGbk(text);
+  const trimmed = trimTrailingSpaces(slice);
+  if (encoded.length !== trimmed.length) return false;
+  for (let i = 0; i < encoded.length; i += 1) {
+    if (encoded[i] !== trimmed[i]) return false;
+  }
+  return true;
+}
+
+/** GDAL WASM writes UTF-8 DBF; Chinese QGIS/ArcGIS expect GBK bytes + GBK/CP936 .cpg. */
 export function transcodeDbfUtf8ToGbk(dbf: Uint8Array): Uint8Array {
   const out = new Uint8Array(dbf);
   const { fields, headerLength, recordLength, recordCount } = parseDbfFields(dbf);
@@ -119,6 +147,8 @@ export function transcodeDbfUtf8ToGbk(dbf: Uint8Array): Uint8Array {
         recordOffset + field.start + field.length,
       );
       const text = decodeFieldBytes(slice);
+      if (!text || fieldBytesAlreadyGbk(slice, text)) continue;
+
       const gbk = encodeGbk(text);
       const writeLength = Math.min(gbk.length, field.length);
       out.set(gbk.subarray(0, writeLength), recordOffset + field.start);
@@ -128,5 +158,10 @@ export function transcodeDbfUtf8ToGbk(dbf: Uint8Array): Uint8Array {
     }
   }
 
+  out[29] = DBF_LDID_CP936;
   return out;
+}
+
+export function shapefileCpgForEncoding(encoding: 'UTF-8' | 'CP936'): string {
+  return encoding === 'CP936' ? SHAPEFILE_CPG_GBK : 'UTF-8';
 }

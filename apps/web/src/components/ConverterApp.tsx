@@ -219,7 +219,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
             warnings: [
               ...inspection.warnings,
               'CAD drawings mix geometry types; Shapefile ZIP contains separate point/line/polygon layers where present.',
-              'Attribute table uses CP936 (GBK) encoding for Chinese text in QGIS/ArcGIS.',
+              'Attribute table uses GBK encoding (.cpg) for Chinese text in QGIS/ArcGIS.',
             ],
           };
         }
