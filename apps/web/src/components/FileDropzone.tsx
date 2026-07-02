@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 interface FileDropzoneProps {
   accept: string;
@@ -9,21 +9,10 @@ interface FileDropzoneProps {
   disabled?: boolean;
 }
 
-function getDroppedFiles(event: DragEvent): File[] {
-  const list = event.dataTransfer?.files;
-  if (list?.length) return Array.from(list);
-
-  const items = event.dataTransfer?.items;
-  if (!items) return [];
-
-  const files: File[] = [];
-  for (const item of Array.from(items)) {
-    if (item.kind === 'file') {
-      const file = item.getAsFile();
-      if (file) files.push(file);
-    }
+declare global {
+  interface Window {
+    __geofiletoolsPendingFiles?: File[];
   }
-  return files;
 }
 
 export function FileDropzone({
@@ -36,7 +25,8 @@ export function FileDropzone({
 }: FileDropzoneProps) {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const zoneRef = useRef<HTMLDivElement>(null);
+  const zoneRef = useRef<HTMLLabelElement>(null);
+  const inputId = useId();
 
   const validate = useCallback(
     (files: FileList | File[]) => {
@@ -54,36 +44,32 @@ export function FileDropzone({
     [maxSizeMb, onFiles],
   );
 
-  const handleDrop = useCallback(
-    (event: DragEvent) => {
-      event.preventDefault();
-      zoneRef.current?.classList.remove('dz-active');
-      if (disabled) return;
+  const consumePendingFiles = useCallback(() => {
+    const pending = window.__geofiletoolsPendingFiles;
+    if (!pending?.length || disabled) return;
+    delete window.__geofiletoolsPendingFiles;
+    validate(pending);
+  }, [disabled, validate]);
 
-      const files = getDroppedFiles(event);
-      if (files.length) {
-        validate(files);
+  const handleDroppedFiles = useCallback(
+    (event: Event) => {
+      if (disabled) return;
+      const custom = event as CustomEvent<File[]>;
+      if (custom.detail?.length) {
+        validate(custom.detail);
         return;
       }
-      setError('No files received from drop. Please use the browse button.');
+      consumePendingFiles();
     },
-    [disabled, validate],
+    [consumePendingFiles, disabled, validate],
   );
 
-  // Single window-level drop handler — no stopPropagation, no zone/window split.
+  // BaseLayout dispatches drops before/alongside hydration; also drain any stashed files.
   useEffect(() => {
-    const onDragOver = (event: DragEvent) => {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-    };
-
-    window.addEventListener('dragover', onDragOver, false);
-    window.addEventListener('drop', handleDrop, false);
-    return () => {
-      window.removeEventListener('dragover', onDragOver, false);
-      window.removeEventListener('drop', handleDrop, false);
-    };
-  }, [handleDrop]);
+    consumePendingFiles();
+    window.addEventListener('geofiletools:files-dropped', handleDroppedFiles);
+    return () => window.removeEventListener('geofiletools:files-dropped', handleDroppedFiles);
+  }, [consumePendingFiles, handleDroppedFiles]);
 
   // Visual feedback on the dashed zone only.
   useEffect(() => {
@@ -106,15 +92,20 @@ export function FileDropzone({
       if (zone.contains(event.relatedTarget as Node)) return;
       setActive(false);
     };
+    const onDrop = () => {
+      setActive(false);
+    };
 
     zone.addEventListener('dragenter', onDragEnter);
     zone.addEventListener('dragover', onDragOver);
     zone.addEventListener('dragleave', onDragLeave);
+    zone.addEventListener('drop', onDrop);
 
     return () => {
       zone.removeEventListener('dragenter', onDragEnter);
       zone.removeEventListener('dragover', onDragOver);
       zone.removeEventListener('dragleave', onDragLeave);
+      zone.removeEventListener('drop', onDrop);
     };
   }, [disabled]);
 
@@ -127,32 +118,32 @@ export function FileDropzone({
   return (
     <div className="space-y-2">
       <style>{`.dz-active{border-color:var(--color-brand-500,#16a34a)!important;background-color:var(--color-brand-50,#f0fdf4)!important}`}</style>
-      <div
+      <label
         ref={zoneRef}
+        htmlFor={disabled ? undefined : inputId}
         className={`${baseClass} ${idleClass} ${disabled ? disabledClass : enabledClass}`}
-        onClick={() => {
-          if (!disabled) inputRef.current?.click();
-        }}
       >
         <input
+          id={inputId}
           ref={inputRef}
           type="file"
-          className="hidden"
+          className="sr-only"
           accept={accept}
           multiple={multiple}
           disabled={disabled}
           onChange={(e) => {
             if (e.target.files?.length) validate(e.target.files);
+            e.target.value = '';
           }}
         />
         <p className="text-base font-medium text-slate-800">Drop files here</p>
         <p className="mt-2 text-sm text-slate-500">{hint}</p>
-        <p className="mt-1 text-xs text-slate-400">Or drop anywhere on this page</p>
+        <p className="mt-1 text-xs text-slate-400">Drop on this page (not the address bar)</p>
         <span className="pointer-events-none mt-4 inline-block rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm">
           Or click to browse files
         </span>
         <p className="mt-3 text-xs text-slate-400">Max {maxSizeMb} MB · processed locally in your browser</p>
-      </div>
+      </label>
       {error && <p className="text-sm text-red-600">{error}</p>}
     </div>
   );

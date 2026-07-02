@@ -51,8 +51,41 @@ const canonical = new URL(canonicalPath, siteConfig.url).toString();
       <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     )}
     <script is:inline>
-      // dragover only — drop is handled by React; inline drop preventDefault can empty dataTransfer.
-      document.addEventListener('dragover', function (e) { e.preventDefault(); }, false);
+      (function () {
+        function preventNav(event) {
+          event.preventDefault();
+        }
+
+        function stashDroppedFiles(event) {
+          event.preventDefault();
+          var transfer = event.dataTransfer;
+          if (!transfer) return;
+
+          var files = transfer.files && transfer.files.length
+            ? Array.prototype.slice.call(transfer.files)
+            : [];
+
+          if (!files.length && transfer.items) {
+            for (var i = 0; i < transfer.items.length; i += 1) {
+              var item = transfer.items[i];
+              if (item.kind === 'file') {
+                var file = item.getAsFile();
+                if (file) files.push(file);
+              }
+            }
+          }
+
+          if (!files.length) return;
+
+          window.__geofiletoolsPendingFiles = files;
+          window.dispatchEvent(
+            new CustomEvent('geofiletools:files-dropped', { detail: files }),
+          );
+        }
+
+        document.addEventListener('dragover', preventNav, false);
+        document.addEventListener('drop', stashDroppedFiles, false);
+      })();
     </script>
   </body>
 </html>
