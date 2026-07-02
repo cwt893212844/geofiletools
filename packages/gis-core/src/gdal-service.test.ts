@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOgr2OgrOptions, parseOgrinfoResult } from './gdal-service';
+import { buildOgr2OgrOptions, parseOgrinfoResult, resolveShapefileEncoding } from './gdal-service';
 
 describe('buildOgr2OgrOptions', () => {
   it('omits target CRS when not provided (CAD drawings without SRS)', () => {
@@ -21,6 +21,22 @@ describe('buildOgr2OgrOptions', () => {
     });
     expect(opts).toContain('-nlt');
     expect(opts).toContain('MULTIPOLYGON');
+  });
+
+  it('uses CP936 for CAD shapefile exports', () => {
+    expect(resolveShapefileEncoding({ outputFormat: 'ESRI Shapefile', shapefileCompat: true })).toBe(
+      'CP936',
+    );
+    const opts = buildOgr2OgrOptions({
+      outputFormat: 'ESRI Shapefile',
+      shapefileCompat: true,
+    });
+    expect(opts).toContain('ENCODING=CP936');
+  });
+
+  it('keeps UTF-8 for non-CAD shapefile exports', () => {
+    const opts = buildOgr2OgrOptions({ outputFormat: 'ESRI Shapefile' });
+    expect(opts).toContain('ENCODING=UTF-8');
   });
 });
 

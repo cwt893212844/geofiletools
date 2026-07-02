@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat } from './types';
+import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat, ShapefileEncoding } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
 
@@ -302,6 +302,11 @@ export function parseOgrinfoResult(info: unknown): Pick<InspectResult, 'layers' 
   };
 }
 
+export function resolveShapefileEncoding(options: ConvertOptions): ShapefileEncoding {
+  if (options.shapefileEncoding) return options.shapefileEncoding;
+  return options.shapefileCompat ? 'CP936' : 'UTF-8';
+}
+
 export function buildOgr2OgrOptions(options: ConvertOptions): string[] {
   const opts = ['-f', options.outputFormat];
 
@@ -315,7 +320,7 @@ export function buildOgr2OgrOptions(options: ConvertOptions): string[] {
     opts.push('-nln', options.layerName);
   }
   if (options.outputFormat === 'ESRI Shapefile') {
-    opts.push('-lco', 'ENCODING=UTF-8');
+    opts.push('-lco', `ENCODING=${resolveShapefileEncoding(options)}`);
     if (options.geometryType) {
       opts.push('-nlt', options.geometryType);
     }
@@ -372,7 +377,13 @@ export async function convert(
 
     if (convertOptions.outputFormat === 'ESRI Shapefile') {
       report(operationOptions, 80, 'Packaging shapefile…');
-      return zipShapefileOutput(Gdal, output, operationOptions);
+      return zipShapefileOutput(
+        Gdal,
+        output,
+        operationOptions,
+        undefined,
+        resolveShapefileEncoding(convertOptions),
+      );
     }
 
     report(operationOptions, 85, 'Preparing download…');
@@ -404,6 +415,7 @@ async function zipShapefileOutput(
   output: OgrOutput,
   operationOptions?: GdalOperationOptions,
   namePrefix?: string,
+  shapefileEncoding: ShapefileEncoding = 'UTF-8',
 ): Promise<Blob> {
   const zip = new JSZip();
   const files = output.all?.length
@@ -416,13 +428,25 @@ async function zipShapefileOutput(
     throw new Error('Shapefile conversion produced no output files.');
   }
 
+  let wroteCpg = false;
+
   for (const file of files) {
     const bytes: Uint8Array = await Gdal.getFileBytes(file.local);
     const rawName = file.local.split('/').pop() ?? file.local;
     const name = namePrefix
       ? rawName.replace(/^(converted|dataset)/, namePrefix)
       : rawName;
+    if (name.toLowerCase().endsWith('.cpg')) wroteCpg = true;
     zip.file(name, bytes);
+  }
+
+  if (!wroteCpg) {
+    const shpName =
+      files
+        .map((file) => file.local.split('/').pop() ?? file.local)
+        .find((name) => name.toLowerCase().endsWith('.shp'))
+        ?.replace(/\.shp$/i, '') ?? namePrefix ?? 'converted';
+    zip.file(`${shpName}.cpg`, shapefileEncoding === 'CP936' ? 'CP936' : 'UTF-8');
   }
 
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }, (metadata) => {
@@ -497,9 +521,11 @@ async function convertCadToShapefileZip(
       { type: 'application/geo+json' },
     );
 
+    const shpEncoding = resolveShapefileEncoding(convertOptions);
     const layerZip = await convert([layerFile], {
       outputFormat: 'ESRI Shapefile',
       geometryType: layer.nlt,
+      shapefileEncoding: shpEncoding,
     }, operationOptions);
 
     const inner = await JSZip.loadAsync(await layerZip.arrayBuffer());

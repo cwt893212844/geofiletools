@@ -5,6 +5,8 @@ export type OutputFormat =
   | 'GPX'
   | 'GPKG';
 
+export type ShapefileEncoding = 'UTF-8' | 'CP936';
+
 export interface ConvertOptions {
   outputFormat: OutputFormat;
   sourceCrs?: string;
@@ -14,6 +16,8 @@ export interface ConvertOptions {
   geometryType?: string;
   /** DXF/DWG often mixes geometry types; split into multiple shapefiles. */
   shapefileCompat?: boolean;
+  /** DBF text encoding for shapefile output. CAD defaults to CP936 for QGIS/ArcGIS CN. */
+  shapefileEncoding?: ShapefileEncoding;
 }
 
 export interface LayerInfo {
