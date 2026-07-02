@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat, ShapefileEncoding } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
+import { normalizeGeoJsonTextProperties, transcodeDbfUtf8ToGbk } from './text-encoding';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GdalInstance = any;
@@ -320,7 +321,8 @@ export function buildOgr2OgrOptions(options: ConvertOptions): string[] {
     opts.push('-nln', options.layerName);
   }
   if (options.outputFormat === 'ESRI Shapefile') {
-    opts.push('-lco', `ENCODING=${resolveShapefileEncoding(options)}`);
+    // WASM reliably writes UTF-8; GBK output is applied when packaging the ZIP.
+    opts.push('-lco', 'ENCODING=UTF-8');
     if (options.geometryType) {
       opts.push('-nlt', options.geometryType);
     }
@@ -437,10 +439,14 @@ async function zipShapefileOutput(
       ? rawName.replace(/^(converted|dataset)/, namePrefix)
       : rawName;
     if (name.toLowerCase().endsWith('.cpg')) wroteCpg = true;
-    zip.file(name, bytes);
+    const payload =
+      shapefileEncoding === 'CP936' && name.toLowerCase().endsWith('.dbf')
+        ? transcodeDbfUtf8ToGbk(bytes)
+        : bytes;
+    zip.file(name, payload);
   }
 
-  if (!wroteCpg) {
+  if (!wroteCpg || shapefileEncoding === 'CP936') {
     const shpName =
       files
         .map((file) => file.local.split('/').pop() ?? file.local)
@@ -501,7 +507,9 @@ async function convertCadToShapefileZip(
     operationOptions,
   );
 
-  const collection = JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection;
+  const collection = normalizeGeoJsonTextProperties(
+    JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection,
+  );
   const buckets = splitFeaturesByGeometryType(collection.features ?? []);
   const layersToWrite = CAD_SHAPEFILE_LAYERS.filter((layer) => buckets[layer.bucket].length > 0);
 

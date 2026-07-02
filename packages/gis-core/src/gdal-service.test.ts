@@ -23,7 +23,7 @@ describe('buildOgr2OgrOptions', () => {
     expect(opts).toContain('MULTIPOLYGON');
   });
 
-  it('uses CP936 for CAD shapefile exports', () => {
+  it('uses CP936 when packaging CAD shapefiles', () => {
     expect(resolveShapefileEncoding({ outputFormat: 'ESRI Shapefile', shapefileCompat: true })).toBe(
       'CP936',
     );
@@ -31,7 +31,7 @@ describe('buildOgr2OgrOptions', () => {
       outputFormat: 'ESRI Shapefile',
       shapefileCompat: true,
     });
-    expect(opts).toContain('ENCODING=CP936');
+    expect(opts).toContain('ENCODING=UTF-8');
   });
 
   it('keeps UTF-8 for non-CAD shapefile exports', () => {
