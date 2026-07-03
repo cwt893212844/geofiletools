@@ -101,11 +101,24 @@ function isValidUtf8(bytes: Uint8Array): boolean {
   }
 }
 
-/** Rewrite CP936/GBK string values in a DXF to UTF-8 so GDAL reads Chinese reliably. */
+/** Rewrite CP936/GBK string values in a DXF to UTF-8 so GDAL reads Chinese reliably.
+ *
+ * Also neutralises $DWGCODEPAGE (ANSI_936 → UTF-8) when GBK repairs are made,
+ * preventing GDAL from re-decoding the already-UTF-8 content as GBK and producing
+ * mojibake or replacement chars in the GeoJSON output.
+ */
 export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
   const lines = splitDxfLines(dxf);
   const eol = lineEnding(dxf);
   const out: Uint8Array[] = [];
+  let madeRepairs = false;
+
+  // Track $DWGCODEPAGE so we can patch it after confirming GBK repairs were needed.
+  let awaitingCodepageValue = false;
+  let codepageValueIdx = -1; // index in out[] of the ANSI_936 value chunk
+
+  const ascii = (bytes: Uint8Array) =>
+    new TextDecoder('ascii', { fatal: false }).decode(bytes).trim();
 
   for (let i = 0; i < lines.length; ) {
     const codeLine = lines[i] ?? new Uint8Array();
@@ -114,7 +127,24 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
 
     out.push(codeLine, eol);
 
-    const code = Number.parseInt(new TextDecoder('ascii').decode(codeLine).trim(), 10);
+    const code = Number.parseInt(ascii(codeLine), 10);
+
+    // Detect the $DWGCODEPAGE header variable (group code 9 = header var name)
+    if (code === 9 && ascii(valueLine) === '$DWGCODEPAGE') {
+      awaitingCodepageValue = true;
+      out.push(valueLine, eol);
+      continue;
+    }
+
+    // The pair immediately following $DWGCODEPAGE is group code 3 = codepage string
+    if (awaitingCodepageValue) {
+      awaitingCodepageValue = false;
+      if (code === 3) {
+        codepageValueIdx = out.length; // record position before push
+      }
+      // Fall through: value is pushed by the normal path below (no high bytes in "ANSI_936")
+    }
+
     if (Number.isFinite(code) && DXF_TEXT_GROUP_CODES.has(code) && valueLine.length > 0) {
       if (
         lineHasHighBytes(valueLine) &&
@@ -122,11 +152,17 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
         !isValidUtf8(valueLine)
       ) {
         out.push(new TextEncoder().encode(iconv.decode(valueLine, 'gbk')), eol);
+        madeRepairs = true;
         continue;
       }
     }
 
     out.push(valueLine, eol);
+  }
+
+  // If we converted GBK→UTF-8, neutralise $DWGCODEPAGE so GDAL won't re-decode as GBK.
+  if (madeRepairs && codepageValueIdx >= 0) {
+    out[codepageValueIdx] = new TextEncoder().encode('UTF-8');
   }
 
   return concatChunks(out);
