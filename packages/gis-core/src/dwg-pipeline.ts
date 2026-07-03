@@ -1,5 +1,5 @@
 import { convert, suggestedDownloadName, toGeoJSON } from './gdal-service';
-import { assertDxfChineseReadable, repairDxfCp936Strings } from './dxf-gbk-repair';
+import { repairDxfCp936Strings, warnIfDxfChineseLost } from './dxf-gbk-repair';
 import type { ConvertOptions, GdalOperationOptions } from './types';
 
 function libredwgWasmBase(): string | undefined {
@@ -45,10 +45,13 @@ export async function dwgToDxfBytes(dwgFile: File): Promise<Uint8Array> {
   }
 }
 
-export async function dwgToDxfFile(dwgFile: File): Promise<File> {
+export async function dwgToDxfFile(
+  dwgFile: File,
+  operationOptions?: GdalOperationOptions,
+): Promise<File> {
   const bytes = await dwgToDxfBytes(dwgFile);
   const repaired = repairDxfCp936Strings(bytes);
-  assertDxfChineseReadable(repaired, dwgFile.name);
+  warnIfDxfChineseLost(repaired, operationOptions);
   const baseName = dwgFile.name.replace(/\.dwg$/i, '') || 'converted';
   return new File([repaired], `${baseName}.dxf`, { type: 'application/dxf' });
 }
@@ -58,7 +61,7 @@ export async function convertDwg(
   options: ConvertOptions,
   operationOptions?: GdalOperationOptions,
 ): Promise<{ blob: Blob; fileName: string; dxfFile: File }> {
-  const dxfFile = await dwgToDxfFile(dwgFile);
+  const dxfFile = await dwgToDxfFile(dwgFile, operationOptions);
   const blob = await convert([dxfFile], options, operationOptions);
   return {
     blob,
@@ -68,6 +71,6 @@ export async function convertDwg(
 }
 
 export async function dwgToGeoJSON(dwgFile: File, targetCrs?: string): Promise<string> {
-  const dxfFile = await dwgToDxfFile(dwgFile);
+  const dxfFile = await dwgToDxfFile(dwgFile, operationOptions);
   return toGeoJSON([dxfFile], targetCrs);
 }

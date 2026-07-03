@@ -147,7 +147,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
 
       if (mode === 'dwg-to-dxf') {
         onProgress(40, 'Converting DWG to DXF…');
-        const dxfFile = await dwgToDxfFile(primary);
+        const dxfFile = await dwgToDxfFile(primary, gdalOptions);
         blob = dxfFile;
         fileName = dxfFile.name;
         onProgress(95, 'DXF ready');

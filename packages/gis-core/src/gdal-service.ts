@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat, ShapefileEncoding } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
 import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
-import { assertDxfChineseReadable, DWG_CHINESE_LOST_ERROR, repairDxfCp936Strings, scanGeoJsonForReplacementChars } from './dxf-gbk-repair';
+import { DWG_CHINESE_LOST_WARNING, repairDxfCp936Strings, scanGeoJsonForReplacementChars } from './dxf-gbk-repair';
 import { normalizeGeoJsonTextProperties, shapefileCpgForEncoding, transcodeDbfUtf8ToGbk } from './text-encoding';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -530,9 +530,7 @@ async function convertCadToShapefileZip(
   // normalizeGeoJsonTextProperties strips U+FFFD so output fields are clean (but empty).
   const collection = normalizeGeoJsonTextProperties(rawCollection);
   if (replacementHits > 0) {
-    operationOptions?.onWarning?.(
-      'Chinese text fields are empty — this DXF was produced by LibreDWG/cadview and Chinese labels were lost during DWG conversion. For correct text, export DXF from AutoCAD/ZWCAD using ANSI_936 (GBK) codepage.',
-    );
+    operationOptions?.onWarning?.(DWG_CHINESE_LOST_WARNING);
     report(operationOptions, 67, 'Warning: Chinese text lost — geometry will still be exported');
   }
   const buckets = splitFeaturesByGeometryType(collection.features ?? []);

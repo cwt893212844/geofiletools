@@ -168,10 +168,22 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
   return concatChunks(out);
 }
 
-export const DWG_CHINESE_LOST_ERROR =
-  'Chinese text was lost while reading this DWG (LibreDWG cannot preserve GBK labels). Export DXF from AutoCAD/ZWCAD with ANSI_936 (GBK) codepage and upload the .dxf file instead.';
+export const DWG_CHINESE_LOST_WARNING =
+  'Chinese text labels were lost while reading this DWG (LibreDWG/cadview cannot preserve GBK). Geometry is still exported, but text fields may be empty. For correct text, export DXF from AutoCAD/ZWCAD using ANSI_936 (GBK) codepage.';
+
+/** @deprecated Use DWG_CHINESE_LOST_WARNING with onWarning instead of throwing. */
+export const DWG_CHINESE_LOST_ERROR = DWG_CHINESE_LOST_WARNING;
+
+export function warnIfDxfChineseLost(
+  dxf: Uint8Array,
+  operationOptions?: { onWarning?: (message: string) => void },
+): boolean {
+  if (!dxfBytesContainReplacement(dxf)) return false;
+  operationOptions?.onWarning?.(DWG_CHINESE_LOST_WARNING);
+  return true;
+}
 
 export function assertDxfChineseReadable(dxf: Uint8Array, sourceLabel = 'CAD file'): void {
   if (!dxfBytesContainReplacement(dxf)) return;
-  throw new Error(`${DWG_CHINESE_LOST_ERROR} (${sourceLabel})`);
+  throw new Error(`${DWG_CHINESE_LOST_WARNING} (${sourceLabel})`);
 }
