@@ -51,6 +51,8 @@ export type ProgressReporter = (progress: number, message?: string) => void;
 
 export interface GdalOperationOptions {
   onProgress?: ProgressReporter;
+  /** Called when a non-fatal problem is detected (e.g. Chinese text lost from a DWG DXF). */
+  onWarning?: (message: string) => void;
   paths?: GdalPaths;
 }
 

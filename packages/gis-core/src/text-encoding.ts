@@ -24,7 +24,9 @@ export function repairLatin1GbkMojibake(text: string): string {
 }
 
 export function normalizeUnicodeText(text: string): string {
-  return repairLatin1GbkMojibake(text.trim());
+  // Strip Unicode replacement chars (U+FFFD) produced by lossy DWG→DXF conversions.
+  const stripped = text.replace(/\uFFFD+/g, '').trim();
+  return repairLatin1GbkMojibake(stripped);
 }
 
 export function normalizeGeoJsonTextProperties(

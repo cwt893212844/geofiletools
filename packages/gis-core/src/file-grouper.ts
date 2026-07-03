@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { assertDxfChineseReadable, repairDxfCp936Strings } from './dxf-gbk-repair';
+import { repairDxfCp936Strings } from './dxf-gbk-repair';
 
 const VECTOR_EXTENSIONS = new Set([
   'gpkg',
@@ -130,11 +130,9 @@ export async function sanitizeFilesForGdal(files: File[]): Promise<File[]> {
     const ext = getExtension(file.name) || 'bin';
     let bytes = await file.arrayBuffer();
     if (ext === 'dxf') {
-      const original = new Uint8Array(bytes);
-      // Check the original bytes: if replacement chars are already present before repair,
-      // the file came from a lossy DWG→DXF conversion (LibreDWG) and Chinese is unrecoverable.
-      assertDxfChineseReadable(original, file.name);
-      const repaired = repairDxfCp936Strings(original);
+      // Repair GBK→UTF-8 and neutralise $DWGCODEPAGE; replacement chars from lossy DWG
+      // conversions are handled (as warnings, not errors) by the conversion pipeline.
+      const repaired = repairDxfCp936Strings(new Uint8Array(bytes));
       bytes = repaired.buffer.slice(repaired.byteOffset, repaired.byteOffset + repaired.byteLength);
     }
     const name = hasShp ? `dataset.${ext}` : `dataset_${index}.${ext}`;

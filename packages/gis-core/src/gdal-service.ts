@@ -525,12 +525,15 @@ async function convertCadToShapefileZip(
     operationOptions,
   );
 
-  const collection = normalizeGeoJsonTextProperties(
-    JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection,
-  );
-  const replacementHits = scanGeoJsonForReplacementChars(collection);
+  const rawCollection = JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection;
+  const replacementHits = scanGeoJsonForReplacementChars(rawCollection);
+  // normalizeGeoJsonTextProperties strips U+FFFD so output fields are clean (but empty).
+  const collection = normalizeGeoJsonTextProperties(rawCollection);
   if (replacementHits > 0) {
-    throw new Error(DWG_CHINESE_LOST_ERROR);
+    operationOptions?.onWarning?.(
+      'Chinese text fields are empty — this DXF was produced by LibreDWG/cadview and Chinese labels were lost during DWG conversion. For correct text, export DXF from AutoCAD/ZWCAD using ANSI_936 (GBK) codepage.',
+    );
+    report(operationOptions, 67, 'Warning: Chinese text lost — geometry will still be exported');
   }
   const buckets = splitFeaturesByGeometryType(collection.features ?? []);
   const layersToWrite = CAD_SHAPEFILE_LAYERS.filter((layer) => buckets[layer.bucket].length > 0);

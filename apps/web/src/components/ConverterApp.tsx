@@ -131,7 +131,12 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
       const primary = inputFiles[0];
       if (!primary) throw new Error('No file selected.');
 
-      const gdalOptions = { onProgress, paths: GDAL_PATHS };
+      const conversionWarnings: string[] = [];
+      const gdalOptions = {
+        onProgress,
+        onWarning: (msg: string) => conversionWarnings.push(msg),
+        paths: GDAL_PATHS,
+      };
       let blob: Blob;
       let fileName = suggestedDownloadName(primary.name, outputFormat);
       let inspection: InspectResult | null = null;
@@ -226,6 +231,13 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         blob = await convert(inputFiles, gdalConvertOptions(mode, outputFormat), gdalOptions);
       }
 
+      if (conversionWarnings.length > 0) {
+        inspection = {
+          layers: inspection?.layers ?? [],
+          warnings: [...(inspection?.warnings ?? []), ...conversionWarnings],
+          driver: inspection?.driver,
+        };
+      }
       if (inspection) {
         setReport(inspection);
       }
