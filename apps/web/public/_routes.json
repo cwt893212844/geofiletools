@@ -3,7 +3,9 @@
   "include": ["/*"],
   "exclude": [
     "/_astro/*",
-    "/gdal/*",
+    "/gdal/gdal3.js",
+    "/gdal/gdal3WebAssembly.data",
+    "/gdal/gdal3WebAssembly.wasm.gz",
     "/libredwg/*",
     "/favicon.svg",
     "/ads.txt",
