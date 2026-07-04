@@ -57,7 +57,7 @@ git push origin main
 ### 部署（Cloudflare Pages）
 - **域名**：https://geofiletools.com
 - **GitHub**：https://github.com/cwt893212844/geofiletools
-- **最新部署**：`48168581` / commit `74295f2`（2026-07-04，修复浩辰 DXF 编码、DBF 识别、GeoJSON→SHP NULL 指针）
+- **最新部署**：`commit `d87eb74`（2026-07-04，修复浩辰 DXF 编码、DBF 识别、GeoJSON→SHP NULL 指针）
 - GDAL WASM：`prepare-pages-dist.mjs` → `.wasm.gz`；`functions/_middleware.js` 边缘解压
 - `apps/web/public/_routes.json` — `/_astro/*` 不走 middleware
 
@@ -97,21 +97,31 @@ git push origin main
   - `gdal-service.ts`：`convertCadToShapefileZip()` 对 `.geojson/.json` 输入走 JS 直读 + 分几何类型分桶，不再先走一次 GDAL GeoJSON 中间层
 - **结果**：`geojson→shp` 不再因空句柄报错
 
-#### KML→GeoJSON：用户反馈“线乱连 / 图形错位”
+#### KML→GeoJSON：用户反馈“线乱连 / 图形错位”（已彻底修复）
 - **样本**：`测试/北山村JMD-201612.kml`
-- **结论 A（数据本身）**：KML 坐标不是 WGS84，经检查 `Y≈996972~997970`，属于本地/投影坐标，却被按 KML 经纬度字段写出
-- **结论 B（预览层）**：OpenLayers 预览固定按 `EPSG:4326 -> EPSG:3857` 投影；把上述工程坐标当纬度解释后，线会在地图上严重错位，看起来像“乱连线”
-- **结论 C（结构层）**：KML 中有嵌套 `MultiGeometry`，`@tmcw/togeojson` 会产出 `GeometryCollection`；需要拆平成独立 feature，避免部分查看器把子几何混画
+- **根因 A（坐标系）**：KML "纬度"值 ≈ 997000（本地工程坐标）；`tan()` 周期性使巨大角度映射为随机 Mercator Y → 相邻地块散落各处 = "乱连线"
+- **根因 B（结构）**：`MultiGeometry` → `GeometryCollection`；已递归展开为独立 feature
 - **修复**：
-  - `kml-gpx.ts`：递归展开 `GeometryCollection`，每个叶子几何单独输出为 feature
-  - `ConverterApp.tsx`：轻量 KML/GPX 路径下抽样坐标；若发现纬度超出 `[-90, 90]`，判定为非 WGS84，本地预览置空并提示用户去 QGIS 指定 CRS
-- **当前状态**：已定位根因并加保护；需要用户刷新后再实机确认“预览已跳过、下载的 GeoJSON 可在 QGIS 正确赋 CRS”
-
+  - `kml-gpx.ts`：递归展开 `GeometryCollection`
+  - `MapPreview.tsx`：新增 `detectNonWgs84()`；若采样坐标超出 WGS84 范围，改用 `dataProjection:'EPSG:3857'`（no-op 透传），同时显示橙色警告条
+  - `ConverterApp.tsx`：非 WGS84 KML 不再置空预览；report 仍保留警告
+- **覆盖**：KML→GeoJSON 转换页 + GeoJSON Viewer 页（任意非 WGS84 GeoJSON 均触发）
 #### 上传/拖拽无反应
 - React 水合前 `onChange` 不执行；拖地址栏会 `file://` 打开 DXF
 - **修复**：`ConverterApp` 懒加载 gis-core；`FileDropzone` label+overlay；`BaseLayout` 全局 drop preventDefault
 
+#### _routes.json WASM 404 修复（2026-07-04）
+- **根因**：`_routes.json` 的 `"exclude": ["/gdal/*"]` 导致 Pages Function 中间件对所有 `/gdal/` 请求被跳过；浏览器请求 `gdal3WebAssembly.wasm` 得到 404 HTML → WASM magic-word CompileError
+- **修复**：`apps/web/public/_routes.json` 把 `"/gdal/*"` 拆为具体文件；`/gdal/gdal3WebAssembly.wasm` 走中间件解压
+
+#### DWG→SHP/GeoJSON 空实体修复（2026-07-04）
+- **样本**：`经开区管网图.dwg`（40MB，AutoCAD 2004）
+- **根因**：`@cadview/dwg` 返回 DXF 但 ENTITIES 段为空；LibreDWG 回退未触发；GDAL 读到空 DXF → 0 features
+- **修复**：`dwg-pipeline.ts` 新增 `dxfHasModelSpaceEntities()`；空 ENTITIES 时自动回退 LibreDWG
+- **附带修复**：`dwgToGeoJSON()` 未定义 `operationOptions` 引用 bug
+
 #### 其他（同前）
+
 - DXF/DWG→SHP：CAD 不重投影；点/线/面拆 `points/lines/polygons` ZIP
 - jszip 静态 import + `gis-core` manualChunks，修 Cloudflare chunk 404
 - DWG WASM：`optimizeDeps.exclude` + `public/libredwg/`
@@ -148,17 +158,18 @@ git push origin main
 - [x] SHP→GeoJSON：支持更多 DBF magic bytes（含 `0x83`）
 - [x] GeoJSON→SHP：修复 `Pointer 'hDS' is NULL in 'GDALGetFileList'`
 - [x] KML→GeoJSON：`MapPreview` 新增 `detectNonWgs84()` + EPSG:3857 no-op bypass；非 WGS84 GeoJSON 显示正确几何形状 + 橙色警告条，不再乱连线
+- [x] _routes.json：/gdal/gdal3WebAssembly.wasm 走 Pages Function 中间件解压，修复 WASM CompileError
+- [x] DWG→SHP/GeoJSON：cadview 空 ENTITIES 时自动回退 LibreDWG
 - [ ] Pages Connect Git 自动部署
 - [ ] Search Console / AdSense
 
 ## Next Steps（新对话优先）
 
-1. **实机验收中文**：`北山村JMD-201612.dxf`、`测试/20222240-规划核实总平面勘测图.dxf` 分别测 `dxf→shp` / `dxf→geojson`
-2. **KML 实机确认**：测 `测试/北山村JMD-201612.kml`→GeoJSON，确认 MapPreview 显示橙色警告条 + 完整地块几何（形状正确）
-3. **DWG 产品策略**：页面上明确「中文标注请上传 CAD 导出的 DXF」；或调研 ODA/服务端 DWG（非 GPL）
-4. **可选**：单文件上限提到 50–80MB（CAD 常见）；geojson→shp GBK 选项；CGCS2000
-5. **变现**：Search Console、sitemap、AdSense
-
+1. **DWG 实机验收**：测 `经开区管网图.dwg` → SHP / GeoJSON（LibreDWG 路径）
+2. **实机验收中文**：`北山村JMD-201612.dxf`、`测试/20222240-规划核实总平面勘测图.dxf` 分别测 `dxf→shp` / `dxf→geojson`
+3. **DWG 产品策略**
+4. **可选**
+5. **变现**
 ## 架构备忘
 
 ```
