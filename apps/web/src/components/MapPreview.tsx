@@ -14,6 +14,44 @@ interface MapPreviewProps {
   heightClassName?: string;
 }
 
+/**
+ * Sample up to 3 coordinates per feature (first 30 features) to detect
+ * whether the GeoJSON is using a local/projected CRS instead of WGS84.
+ * Returns true when any sampled coordinate has lon > 180 / < -180 or lat > 90 / < -90.
+ */
+function detectNonWgs84(geojsonText: string): boolean {
+  try {
+    const data = JSON.parse(geojsonText) as GeoJSON.FeatureCollection;
+    for (const f of (data.features ?? []).slice(0, 30)) {
+      const g = f.geometry as any; // eslint-disable-line @typescript-eslint/no-explicit-any
+      if (!g) continue;
+      let samples: number[][] = [];
+      if (g.type === 'Point') {
+        samples = [g.coordinates as number[]];
+      } else if (g.type === 'LineString') {
+        samples = (g.coordinates as number[][]).slice(0, 3);
+      } else if (g.type === 'Polygon') {
+        samples = ((g.coordinates as number[][][])[0] ?? []).slice(0, 3);
+      } else if (g.type === 'MultiPoint') {
+        samples = (g.coordinates as number[][]).slice(0, 3);
+      } else if (g.type === 'MultiLineString') {
+        samples = (g.coordinates as number[][][]).flatMap((r) => r.slice(0, 1)).slice(0, 3);
+      } else if (g.type === 'MultiPolygon') {
+        samples = (g.coordinates as number[][][][])
+          .flatMap((p) => (p[0] ?? []).slice(0, 1))
+          .slice(0, 3);
+      }
+      for (const c of samples) {
+        if (typeof c[1] === 'number' && (c[1] > 90 || c[1] < -90)) return true;
+        if (typeof c[0] === 'number' && (c[0] > 180 || c[0] < -180)) return true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export function MapPreview({ geojsonText, heightClassName = 'h-96' }: MapPreviewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<Map | null>(null);
@@ -27,6 +65,16 @@ export function MapPreview({ geojsonText, heightClassName = 'h-96' }: MapPreview
       return 0;
     }
   }, [geojsonText]);
+
+  /**
+   * True when sampled coordinates fall outside WGS84 valid ranges.
+   * In this case we render the raw coordinates as EPSG:3857 (no reprojection)
+   * so the geometry shape is visible even though the location is meaningless.
+   */
+  const isLocalCrs = useMemo(
+    () => (geojsonText?.trim() ? detectNonWgs84(geojsonText) : false),
+    [geojsonText],
+  );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -65,7 +113,9 @@ export function MapPreview({ geojsonText, heightClassName = 'h-96' }: MapPreview
 
     try {
       const features = new GeoJSON().readFeatures(geojsonText, {
-        dataProjection: 'EPSG:4326',
+        // When coords are out of WGS84 range, skip reprojection (treat as EPSG:3857)
+        // so the geometry shape renders correctly instead of "乱连线".
+        dataProjection: isLocalCrs ? 'EPSG:3857' : 'EPSG:4326',
         featureProjection: 'EPSG:3857',
       });
       source.addFeatures(features);
@@ -75,7 +125,7 @@ export function MapPreview({ geojsonText, heightClassName = 'h-96' }: MapPreview
     } catch {
       // ignore invalid geojson during intermediate states
     }
-  }, [geojsonText]);
+  }, [geojsonText, isLocalCrs]);
 
   useEffect(() => () => mapRef.current?.setTarget(undefined), []);
 
@@ -92,7 +142,16 @@ export function MapPreview({ geojsonText, heightClassName = 'h-96' }: MapPreview
           No features to display on the map. Download the result to inspect the GeoJSON file.
         </div>
       ) : (
-        <div ref={containerRef} className={heightClassName} />
+        <div>
+          {isLocalCrs && (
+            <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
+              Local / projected coordinates detected — geometry shape is shown without proper
+              georeferencing. Open the file in QGIS and assign the correct CRS to view it at the
+              right location.
+            </div>
+          )}
+          <div ref={containerRef} className={heightClassName} />
+        </div>
       )}
     </div>
   );

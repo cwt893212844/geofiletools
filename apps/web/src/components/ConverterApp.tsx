@@ -48,7 +48,7 @@ function gdalConvertOptions(mode: ConverterMode, outputFormat: OutputFormat): Co
   if (!usesCadInput(mode)) {
     options.targetCrs = 'EPSG:4326';
   }
-  if (usesCadInput(mode) && outputFormat === 'ESRI Shapefile') {
+  if (outputFormat === 'ESRI Shapefile') {
     options.shapefileCompat = true;
   }
   return options;
@@ -162,6 +162,27 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         blob = await kmlOrGpxFileToGeoJSONBlob(primary);
         fileName = suggestedDownloadName(primary.name, 'GeoJSON');
         const collection = JSON.parse(await blob.text()) as GeoJSON.FeatureCollection;
+
+        const kmlWarnings: string[] = [];
+        const sampleCoords = collection.features
+          .slice(0, 50)
+          .flatMap((f) => {
+            const g = f.geometry;
+            if (!g) return [];
+            if (g.type === 'Point') return [g.coordinates as number[]];
+            if (g.type === 'LineString') return (g.coordinates as number[][]).slice(0, 1);
+            if (g.type === 'Polygon') return ((g.coordinates as number[][][])[0] ?? []).slice(0, 1);
+            return [];
+          });
+        const hasNonWgs84 = sampleCoords.some(
+          (c) => typeof c[1] === 'number' && (c[1] > 90 || c[1] < -90),
+        );
+        if (hasNonWgs84) {
+          kmlWarnings.push(
+            'Coordinates appear to be in a local/projected CRS (not WGS84). Map preview shows geometry shape only — open the GeoJSON in QGIS and assign the correct CRS for proper georeferencing.',
+          );
+        }
+
         inspection = {
           layers: [
             {
@@ -170,7 +191,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
               featureCount: collection.features?.length ?? 0,
             },
           ],
-          warnings: [],
+          warnings: kmlWarnings,
         };
         onProgress(95, 'Done');
       } else if (mode === 'geojson-to-kml') {
@@ -214,7 +235,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         };
         blob = await convert(
           [prepared.ogrFile],
-          { outputFormat, targetCrs: 'EPSG:4326', sourceCrs: prepared.sourceCrs },
+          { ...gdalConvertOptions(mode, outputFormat), sourceCrs: prepared.sourceCrs },
           gdalOptions,
         );
       } else if (mode === 'shp-to-geojson') {
