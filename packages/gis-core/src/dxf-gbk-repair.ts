@@ -103,19 +103,19 @@ function isValidUtf8(bytes: Uint8Array): boolean {
 
 /** Rewrite CP936/GBK string values in a DXF to UTF-8 so GDAL reads Chinese reliably.
  *
- * Also neutralises $DWGCODEPAGE (ANSI_936 → UTF-8) when GBK repairs are made,
- * preventing GDAL from re-decoding the already-UTF-8 content as GBK and producing
- * mojibake or replacement chars in the GeoJSON output.
+ * Always rewrites $DWGCODEPAGE ANSI_936 → UTF-8 so GDAL does not re-decode the content
+ * as GBK.  This covers two cases:
+ *   1. Native GBK DXF: raw GBK bytes are converted to UTF-8 (madeRepairs = true).
+ *   2. 浩辰/cadence UTF-8 DXF: file is already valid UTF-8 but header still says ANSI_936;
+ *      without patching the header GDAL double-decodes UTF-8→GBK→mojibake.
  */
 export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
   const lines = splitDxfLines(dxf);
   const eol = lineEnding(dxf);
   const out: Uint8Array[] = [];
-  let madeRepairs = false;
 
-  // Track $DWGCODEPAGE so we can patch it after confirming GBK repairs were needed.
   let awaitingCodepageValue = false;
-  let codepageValueIdx = -1; // index in out[] of the ANSI_936 value chunk
+  let codepageValueIdx = -1; // index in out[] where the codepage value chunk lives
 
   const ascii = (bytes: Uint8Array) =>
     new TextDecoder('ascii', { fatal: false }).decode(bytes).trim();
@@ -139,10 +139,12 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
     // The pair immediately following $DWGCODEPAGE is group code 3 = codepage string
     if (awaitingCodepageValue) {
       awaitingCodepageValue = false;
-      if (code === 3) {
-        codepageValueIdx = out.length; // record position before push
+      if (code === 3 && /ANSI_936|GB2312|GBK/i.test(ascii(valueLine))) {
+        // Record position — we will overwrite this value with UTF-8 at the end,
+        // regardless of whether raw GBK bytes were found (covers 浩辰CAD UTF-8+ANSI_936).
+        codepageValueIdx = out.length;
       }
-      // Fall through: value is pushed by the normal path below (no high bytes in "ANSI_936")
+      // Fall through: value is pushed by the normal path below
     }
 
     if (Number.isFinite(code) && DXF_TEXT_GROUP_CODES.has(code) && valueLine.length > 0) {
@@ -152,7 +154,6 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
         !isValidUtf8(valueLine)
       ) {
         out.push(new TextEncoder().encode(iconv.decode(valueLine, 'gbk')), eol);
-        madeRepairs = true;
         continue;
       }
     }
@@ -160,8 +161,10 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
     out.push(valueLine, eol);
   }
 
-  // If we converted GBK→UTF-8, neutralise $DWGCODEPAGE so GDAL won't re-decode as GBK.
-  if (madeRepairs && codepageValueIdx >= 0) {
+  // Always set codepage to UTF-8 when header claims ANSI_936.
+  // After this function the output bytes are always UTF-8; telling GDAL otherwise
+  // would trigger a second GBK→UTF-8 decode that corrupts every character.
+  if (codepageValueIdx >= 0) {
     out[codepageValueIdx] = new TextEncoder().encode('UTF-8');
   }
 

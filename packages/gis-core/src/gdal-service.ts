@@ -247,8 +247,15 @@ async function openDataset(
     throw new Error(`GDAL could not open the input file(s): ${detail}${shapefileHint}`);
   }
 
+  const dataset = result.datasets[0];
+  // gdal3.js wraps GDALOpenEx return value; a falsy/zero value means GDALOpenEx returned NULL.
+  if (!dataset) {
+    const detail = result.errors?.length ? formatGdalError(result.errors) : 'GDALOpenEx returned a null handle.';
+    throw new Error(`GDAL could not open the input file(s): ${detail}`);
+  }
+
   report(options, 40, 'Dataset opened');
-  return { Gdal, dataset: result.datasets[0], datasetFiles };
+  return { Gdal, dataset, datasetFiles };
 }
 
 function extractEpsgFromUnknown(value: unknown): string | undefined {

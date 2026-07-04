@@ -19,6 +19,23 @@ interface FileEntry {
 const SHAPEFILE_MAGIC = 0x0000270a;
 const KNOWN_SHP_TYPES = new Set([0, 1, 3, 5, 8, 11, 13, 15, 18, 21, 23, 25, 28, 31]);
 
+/**
+ * Valid dBASE version bytes found in the wild:
+ *   0x02 FoxBASE / 0x03 dBASE III / 0x04 dBASE IV / 0x05 dBASE V
+ *   0x07 Visual Objects / 0x30-0x32 Visual FoxPro
+ *   0x43/0x63 dBASE IV SQL / 0x83 dBASE III + memo
+ *   0x87 Visual Objects + memo / 0x8B dBASE IV + memo / 0x8E dBASE IV + SQL
+ *   0xB3 dBASE III memo VAX / 0xCB dBASE IV SQL+memo
+ *   0xE5 Clipper SIX / 0xF5 FoxPro + memo
+ */
+const DBF_VALID_VERSIONS = new Set([
+  0x02, 0x03, 0x04, 0x05, 0x07,
+  0x30, 0x31, 0x32,
+  0x43, 0x63,
+  0x83, 0x87, 0x8b, 0x8c, 0x8e,
+  0xb3, 0xcb, 0xe5, 0xf5,
+]);
+
 function cloneBuffer(buf: ArrayBuffer): ArrayBuffer {
   return buf.slice(0);
 }
@@ -30,7 +47,7 @@ export function hasShapefileMagic(data: ArrayBuffer): boolean {
 
 export function hasDbfMagic(data: ArrayBuffer): boolean {
   const view = new DataView(data);
-  return view.byteLength >= 1 && view.getUint8(0) === 0x03;
+  return view.byteLength >= 1 && DBF_VALID_VERSIONS.has(view.getUint8(0));
 }
 
 export function readShapeTypeCode(data: ArrayBuffer): number | null {

@@ -194,7 +194,24 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         inputGeoJsonText = await primary.text();
         const prepared = prepareGeoJsonInput(inputGeoJsonText);
         previewTextOverride = prepared.previewText;
-        inspection = await inspect([prepared.ogrFile], gdalOptions);
+        // Derive layer info from the parsed collection — avoids an extra GDAL open/close
+        // cycle that can leave stale dataset handles and cause a NULL hDS on the convert call.
+        const geomTypes = new Set(
+          prepared.ogrCollection.features
+            .map((f) => f.geometry?.type)
+            .filter((t): t is string => !!t),
+        );
+        inspection = {
+          layers: [
+            {
+              name: 'features',
+              geometryType: geomTypes.size === 1 ? [...geomTypes][0]! : 'Mixed',
+              featureCount: prepared.ogrCollection.features.length,
+              crs: prepared.sourceCrs,
+            },
+          ],
+          warnings: [],
+        };
         blob = await convert(
           [prepared.ogrFile],
           { outputFormat, targetCrs: 'EPSG:4326', sourceCrs: prepared.sourceCrs },

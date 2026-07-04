@@ -82,22 +82,40 @@ describe('dxf-gbk-repair', () => {
     expect(new TextDecoder('utf-8').decode(repaired)).toContain('规划验收');
   });
 
-  it('does not modify $DWGCODEPAGE when no GBK repairs are needed', () => {
-    // UTF-8 DXF with ANSI_936 header but already-valid UTF-8 text: codepage stays as-is
-    const utfText = '规划验收';
+  it('patches ANSI_936 header even when file is already UTF-8 (浩辰CAD case)', () => {
+    // 浩辰CAD exports UTF-8 DXF but keeps ANSI_936 header.
+    // Without patching, GDAL would re-decode UTF-8 bytes as GBK → mojibake.
     const lines = [
       '  0', 'SECTION', '  2', 'HEADER',
       '  9', '$DWGCODEPAGE', '  3', 'ANSI_936',
       '  0', 'ENDSEC',
       '  0', 'SECTION', '  2', 'ENTITIES',
-      '  0', 'TEXT', '  1', utfText,
+      '  0', 'TEXT', '  1', '规划验收',
+      '  0', 'ENDSEC', '  0', 'EOF',
+    ].join('\r\n') + '\r\n';
+    const sample = new TextEncoder().encode(lines);
+    const repaired = repairDxfCp936Strings(sample);
+    const out = new TextDecoder('utf-8').decode(repaired);
+    expect(out).not.toContain('ANSI_936');
+    expect(out).toContain('UTF-8');
+    expect(out).toContain('规划验收');
+  });
+
+  it('does not modify $DWGCODEPAGE when the header is not ANSI_936', () => {
+    // UTF-8 DXF with a UNICODE header: codepage should not be altered
+    const lines = [
+      '  0', 'SECTION', '  2', 'HEADER',
+      '  9', '$DWGCODEPAGE', '  3', 'UNICODE',
+      '  0', 'ENDSEC',
+      '  0', 'SECTION', '  2', 'ENTITIES',
+      '  0', 'TEXT', '  1', '规划验收',
       '  0', 'ENDSEC', '  0', 'EOF',
     ].join('\n') + '\n';
     const sample = new TextEncoder().encode(lines);
     const repaired = repairDxfCp936Strings(sample);
     const repairedText = new TextDecoder('utf-8').decode(repaired);
-    // No GBK repairs made → $DWGCODEPAGE value unchanged
-    expect(repairedText).toContain('ANSI_936');
-    expect(repairedText).toContain(utfText);
+    // UNICODE header: no change
+    expect(repairedText).toContain('UNICODE');
+    expect(repairedText).toContain('规划验收');
   });
 });
