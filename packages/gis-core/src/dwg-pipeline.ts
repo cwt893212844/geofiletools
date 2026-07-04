@@ -12,6 +12,23 @@ function formatDwgError(error: unknown): string {
   return String(error);
 }
 
+/**
+ * Return true when the DXF text contains at least one geometry entity in
+ * the ENTITIES (model-space) section.  cadview sometimes returns a header-only
+ * DXF with an empty ENTITIES section for DWG files it can't fully parse —
+ * this check lets us fall back to LibreDWG in that case.
+ */
+function dxfHasModelSpaceEntities(dxfText: string): boolean {
+  const ENTITY_RE = /\r?\n(LINE|LWPOLYLINE|POLYLINE|INSERT|TEXT|MTEXT|CIRCLE|ARC|POINT|SPLINE|3DFACE|SOLID)\r?\n/;
+  // Try to start search from the ENTITIES section if it exists
+  const entIdx = dxfText.search(/\r?\nENTITIES\r?\n/);
+  if (entIdx >= 0) {
+    return ENTITY_RE.test(dxfText.slice(entIdx));
+  }
+  // No ENTITIES section header found — check anywhere (handles unusual DXF structures)
+  return ENTITY_RE.test(dxfText);
+}
+
 async function convertWithLibreDwg(buffer: ArrayBuffer): Promise<Uint8Array> {
   const { LibreDwg } = await import('@mlightcad/libredwg-web');
   const libredwg = await LibreDwg.create(libredwgWasmBase());
@@ -29,7 +46,15 @@ export async function dwgToDxfBytes(dwgFile: File): Promise<Uint8Array> {
   try {
     const { convertDwgToDxf } = await import('@cadview/dwg');
     const dxfString = await convertDwgToDxf(buffer, { timeout: 120_000 });
-    return new TextEncoder().encode(dxfString);
+    // cadview can succeed but return a header-only DXF with no model-space
+    // entities (e.g. files with mostly block-based geometry). Detect this
+    // and fall through to LibreDWG so we get a complete conversion.
+    if (dxfHasModelSpaceEntities(dxfString)) {
+      return new TextEncoder().encode(dxfString);
+    }
+    primaryError = new Error(
+      'cadview produced a DXF with no recognisable geometry — trying LibreDWG',
+    );
   } catch (error) {
     primaryError = error;
   }
@@ -71,6 +96,6 @@ export async function convertDwg(
 }
 
 export async function dwgToGeoJSON(dwgFile: File, targetCrs?: string): Promise<string> {
-  const dxfFile = await dwgToDxfFile(dwgFile, operationOptions);
+  const dxfFile = await dwgToDxfFile(dwgFile);
   return toGeoJSON([dxfFile], targetCrs);
 }

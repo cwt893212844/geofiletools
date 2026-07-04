@@ -1,9 +1,10 @@
 import JSZip from 'jszip';
 import type { ConvertOptions, GdalOperationOptions, GdalPaths, InspectResult, OutputFormat, ShapefileEncoding } from './types';
 import { DEFAULT_GDAL_PATHS as defaultPaths } from './types';
-import { prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
+import { getExtension, prepareGdalInputFiles, SHAPEFILE_LAYER_PATH, type PreparedGdalInput } from './file-grouper';
 import { DWG_CHINESE_LOST_WARNING, repairDxfCp936Strings, scanGeoJsonForReplacementChars } from './dxf-gbk-repair';
 import { normalizeGeoJsonTextProperties, shapefileCpgForEncoding, transcodeDbfUtf8ToGbk } from './text-encoding';
+import { parseGeoJsonCollection, prepareGeoJsonForOgr } from './geojson-normalize';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GdalInstance = any;
@@ -521,18 +522,34 @@ async function convertCadToShapefileZip(
   convertOptions: ConvertOptions,
   operationOptions?: GdalOperationOptions,
 ): Promise<Blob> {
-  report(operationOptions, 60, 'Reading CAD geometry…');
-  const geojsonBlob = await convert(
-    files,
-    {
-      outputFormat: 'GeoJSON',
-      sourceCrs: convertOptions.sourceCrs,
-      targetCrs: convertOptions.targetCrs,
-    },
-    operationOptions,
-  );
+  // GeoJSON inputs: read directly in JS to avoid GDAL failing on GeometryCollection features.
+  // CAD inputs (DXF/DWG): use GDAL to convert to GeoJSON first.
+  const isGeoJsonInput = files.some((f) => {
+    const ext = getExtension(f.name);
+    return ext === 'geojson' || ext === 'json';
+  });
 
-  const rawCollection = JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection;
+  let rawCollection: GeoJSON.FeatureCollection;
+
+  if (isGeoJsonInput) {
+    report(operationOptions, 25, 'Reading GeoJSON…');
+    const text = await files[0].text();
+    const parsed = parseGeoJsonCollection(text);
+    rawCollection = prepareGeoJsonForOgr(parsed);
+  } else {
+    report(operationOptions, 60, 'Reading CAD geometry…');
+    const geojsonBlob = await convert(
+      files,
+      {
+        outputFormat: 'GeoJSON',
+        sourceCrs: convertOptions.sourceCrs,
+        targetCrs: convertOptions.targetCrs,
+      },
+      operationOptions,
+    );
+    rawCollection = JSON.parse(await geojsonBlob.text()) as GeoJSON.FeatureCollection;
+  }
+
   const replacementHits = scanGeoJsonForReplacementChars(rawCollection);
   // normalizeGeoJsonTextProperties strips U+FFFD so output fields are clean (but empty).
   const collection = normalizeGeoJsonTextProperties(rawCollection);
@@ -544,7 +561,12 @@ async function convertCadToShapefileZip(
   const layersToWrite = CAD_SHAPEFILE_LAYERS.filter((layer) => buckets[layer.bucket].length > 0);
 
   if (!layersToWrite.length) {
-    throw new Error('No supported vector features found in CAD drawing.');
+    throw new Error(
+      'No supported vector features found in CAD drawing. ' +
+      'The file may use entity types not readable by the open-source converter (e.g. HATCH, ACIS solids). ' +
+      'Try: (1) convert DWG → DXF first and download the DXF, then upload the DXF to the DXF converter; ' +
+      '(2) export DXF from AutoCAD/ZWCAD with "Select all" and SAVEAS DXF.',
+    );
   }
 
   const zip = new JSZip();
