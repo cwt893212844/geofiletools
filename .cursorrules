@@ -19,7 +19,7 @@
 cd "e:\000AI变现\06-矢量转换网站"
 npm install
 npm run dev      # http://localhost:4321
-npm test         # packages/gis-core vitest（27 tests）
+npm test         # packages/gis-core vitest（33 tests）
 npm run build    # → apps/web/dist
 node scripts/prepare-pages-dist.mjs   # 生产：wasm→gzip，删明文 .wasm
 npx wrangler pages deploy apps/web/dist --project-name geofiletools
@@ -39,14 +39,15 @@ git push origin main
 - `/tools/coordinate-converter` — WGS84 ↔ UTM + Copy
 
 ### 核心模块（packages/gis-core）
-- `shapefile-to-geojson.ts` — shpjs 直读；魔数识别；GBK/CP936；.prj → WGS84
-- `geojson-normalize.ts` — GeoJSON 规范化；`prepareGeoJsonInput`
+- `shapefile-to-geojson.ts` — shpjs 直读；魔数识别；GBK/CP936；.prj → WGS84；**错误消息含上传文件列表**
+- `geojson-normalize.ts` — GeoJSON 规范化；`prepareGeoJsonInput` **自动检测 CRS（显式 crs 块 → 坐标推断）**
 - `gdal-service.ts` — GDAL 懒加载；CAD→SHP 分层 ZIP；CAD 打开尝试 `ENCODING=GBK/UTF-8`
 - `text-encoding.ts` — `iconv-lite`；`transcodeDbfUtf8ToGbk`；DBF LDID `0x57`；`.cpg` 写 `GBK`
 - `dxf-gbk-repair.ts` — **DXF 读入前**把 CP936/GBK 字符串行修成 UTF-8；检测 `efbfbd`（U+FFFD）并阻断
 - `file-grouper.ts` — SHP 分组、ZIP；`sanitizeFilesForGdal` 对 `.dxf` 自动 `repairDxfCp936Strings`
-- `dwg-pipeline.ts` — DWG→DXF→GDAL；`dwgToDxfFile` 后 `assertDxfChineseReadable`
-- `coordinate.ts` / `kml-gpx.ts` — 同上
+- `dwg-pipeline.ts` — DWG→DXF→GDAL；`dwgToDxfFile` 后 `assertDxfChineseReadable`；`detectCadCrs` 自动检测 CGCS2000 带号
+- `coordinate.ts` — `detectGeoJsonCrsFromCoords()` 从坐标值推断投影 CRS（CGCS2000 3度带 / UTM）
+- `kml-gpx.ts` — KML/GPX 转换；`closedLineStringsToPolygons()` 闭合折线→面；`explodeGeometryCollections()` 递归展开
 
 ### UI（apps/web）
 - `ConverterApp` — **懒加载** `@gis-tools/core`（`gis-core-client.ts`），首屏 ~6KB 即可水合
@@ -57,7 +58,7 @@ git push origin main
 ### 部署（Cloudflare Pages）
 - **域名**：https://geofiletools.com
 - **GitHub**：https://github.com/cwt893212844/geofiletools
-- **最新部署**：`commit `d87eb74`（2026-07-04，修复浩辰 DXF 编码、DBF 识别、GeoJSON→SHP NULL 指针）
+- **最新部署**：`4ff17d96` / commit `6f6b740`（2026-07-03，LibreDWG DXF 改为警告+继续）
 - GDAL WASM：`prepare-pages-dist.mjs` → `.wasm.gz`；`functions/_middleware.js` 边缘解压
 - `apps/web/public/_routes.json` — `/_astro/*` 不走 middleware
 
@@ -72,6 +73,46 @@ git push origin main
   - **旧行为**：直接报错阻断
   - **现行为**：允许继续导出几何，文本字段清空并给 warning；提示用户 **用 CAD 导出 ANSI_936 DXF 再上传**
   - **原生 GBK DXF**（如 `北山村JMD-201612.dxf`）：`repairDxfCp936Strings()` 读入前 GBK→UTF-8，再导出 GBK SHP ✅
+
+### 2026-07-05（DXF 编码深化修复 + 下载按钮性能修复）
+
+#### DXF→SHP/GeoJSON：GBK 字节偶然形成有效 UTF-8 导致乱码
+- **根因**：`repairDxfCp936Strings` 用 `!isValidUtf8()` 判断是否转码。但部分 GBK 二字节（如 `D1EE`=杨、`CABD`=氏）恰好构成合法 UTF-8 二字节序列，解码为 U+0080-U+07FF 范围的 Latin/Greek/Cyrillic 字符。由于 `isValidUtf8` 返回 true，GBK→UTF-8 转码被跳过；但 `$DWGCODEPAGE` 已改为 UTF-8 → GDAL 把原始 GBK 字节当 UTF-8 读 → 生僻字/心形符号乱码
+- **修复**：
+  - 新增 `utf8DecodeHasHighCodepoints(bytes)` — 检查 UTF-8 解码后是否含 ≥U+0800 的码点（CJK 范围）。真正的 UTF-8 中文（如浩辰 CAD）码点 ≥U+0800；GBK 字节偶然形成的 UTF-8 序列码点 <U+0800
+  - `repairDxfCp936Strings` 三路判断：
+    1. `!isValidUtf8` → 肯定 GBK，转码
+    2. `isValidUtf8` + `codepageDeclaresGbk` + `!utf8DecodeHasHighCodepoints` → GBK 字节伪装 UTF-8，转码
+    3. `isValidUtf8` + 高码点 → 真 UTF-8（浩辰 CAD），不动内容
+- **测试**：新增"GBK bytes that accidentally form valid UTF-8"用例，全套 33 passed
+
+#### 下载按钮卡顿/无响应
+- **根因**：`URL.revokeObjectURL(url)` 在 `anchor.click()` 后立即调用；浏览器还没读完 blob 数据就回收了 URL → 下载卡死
+- **修复**：`DownloadButton.tsx` 延迟 10 秒回收；下载中禁用按钮 + 显示 "Downloading…" 防重复点击
+
+### 2026-07-05（CRS 检测 + KML 闭合线 + SHP 文件提示）
+
+#### GeoJSON→SHP/GPKG：投影坐标重投影错误
+- **根因**：`gdalConvertOptions()` 强制 `targetCrs='EPSG:4326'`；当 GeoJSON 含投影坐标时，GDAL 把米制度当 WGS84 重投影 → 坐标错乱
+- **修复**：
+  - `coordinate.ts`：新增 `detectGeoJsonCrsFromCoords()` — 从坐标值推断 CRS（采样 10 点 → 地理/CGCS2000 3度带/UTM 检测）
+  - `geojson-normalize.ts`：`prepareGeoJsonInput` 先查显式 `crs` 块，再走坐标推断
+  - `ConverterApp.tsx`：检测到投影 CRS 时 `delete targetCrs` + 设 `assignCrs`（`-a_srs`），**不传 `sourceCrs`**（避免 GDAL 重新解释坐标）
+- **关键教训**：GeoJSON 文件的坐标值就是原始值，GDAL 默认按 WGS84 读。传 `-s_srs` 会让 GDAL 重新解释坐标值 → 错位。只用 `-a_srs` 标注输出 CRS 即可。
+- **覆盖**：`geojson-to-shp`、`geojson-to-gpkg`
+
+#### KML→GeoJSON：闭合折线变面
+- **根因**：CAD 导出的 KML 用 `<LineString>` 表示闭合多边形（首尾坐标相同），`@tmcw/togeojson` 转成 GeoJSON `LineString`，渲染时首尾相连很乱
+- **样本**：`北山村JMD-201612.kml`（7535 个闭合 LineString）
+- **修复**：`kml-gpx.ts` 新增 `closedLineStringsToPolygons()` — 首尾坐标相同且 ≥4 点的 LineString 自动转 Polygon
+- **结果**：闭合 LineString 从 7535 降为 0；Polygon 从 11680 增至 19215
+
+#### SHP→GeoJSON：文件要求提示
+- **根因**：用户只上传 .shp 文件，缺少 .shx/.dbf → 报错信息不明确
+- **修复**：
+  - `shp-to-geojson.astro`：hint 改为 `"Select .shp + .shx + .dbf (and optionally .prj), or a .zip containing all files"`
+  - FAQ 明确回答"哪些文件必须上传"和"能不能只传 .shp"
+  - `shapefile-to-geojson.ts`：错误消息包含用户实际上传的文件名 + 需要的文件列表
 
 ### 2026-07-04（浩辰 DXF / SHP / GeoJSON 修复）
 
@@ -133,19 +174,22 @@ git push origin main
 - **DWG 中文**：LibreDWG/cadview **无法保留 GBK 图层名/标注** → 必须 CAD 另存 DXF（ANSI_936）
 - DWG **GPL-3.0**，商用前需合规评估
 - DXF/DWG 无 CRS 时保持 CAD 原坐标
+- **GeoJSON 坐标陷阱**：GDAL 的 GeoJSON 驱动默认按 WGS84 读坐标。不要传 `-s_srs` 重新解释坐标值，只用 `-a_srs` 标注输出 CRS。
 
 ## 测试资产（未入库，仓库根 / `测试/`）
 
 | 文件 | 大小 | 用途 |
 |------|------|------|
 | `北山村JMD-201612.dxf` | 17MB | 原生 GBK DXF，中文 SHP 验收 ✅ |
+| `北山村JMD-201612.kml` | ~30MB | CAD 导出 KML，闭合 LineString→Polygon 验收 ✅ |
+| `respl_4526.kml` | ~30MB | GIS 导出 KML，标准 Polygon ✅ |
 | `测试/20214656-规划验收…平面.dwg/.dxf` | 1.4MB / 5MB | LibreDWG DXF，中文已损 ❌ |
 | `东坑村城市更新叠加图.dxf` | 76MB | 超限 |
 | `经开区管网图.dxf` | 39MB | 超限；DWG 5.9MB 可用 |
 
 ## 验收状态
 
-- [x] `npm test` **30 passed**（含 text-encoding、dxf-gbk-repair）
+- [x] `npm test` **33 passed**（含 text-encoding、dxf-gbk-repair、GBK伪装UTF-8用例）
 - [x] `npm run build` 14 页
 - [x] Cloudflare Pages 部署 + `geofiletools.com`
 - [x] DXF→SHP 混合几何分层 ZIP
@@ -160,28 +204,42 @@ git push origin main
 - [x] KML→GeoJSON：`MapPreview` 新增 `detectNonWgs84()` + EPSG:3857 no-op bypass；非 WGS84 GeoJSON 显示正确几何形状 + 橙色警告条，不再乱连线
 - [x] _routes.json：/gdal/gdal3WebAssembly.wasm 走 Pages Function 中间件解压，修复 WASM CompileError
 - [x] DWG→SHP/GeoJSON：cadview 空 ENTITIES 时自动回退 LibreDWG
+- [x] **GeoJSON→SHP/GPKG CRS 修复**：`detectGeoJsonCrsFromCoords()` + `-a_srs` 标注（不传 `-s_srs`）
+- [x] **KML→GeoJSON 闭合折线**：`closedLineStringsToPolygons()` 自动转 Polygon
+- [x] **SHP 文件要求提示**：错误消息含上传文件列表 + FAQ 明确说明
+- [x] **DXF 编码深化修复**：`utf8DecodeHasHighCodepoints` 区分真 UTF-8 中文和 GBK 字节伪装 UTF-8，全套 33 测试通过
+- [x] **下载按钮性能修复**：延迟 `revokeObjectURL` 10s + 防重复点击
+- [ ] **实机复测**：`北山村JMD-201612.dxf` → SHP → QGIS GBK 中文属性表
+- [ ] **实机复测**：下载 DXF→SHP ZIP 是否流畅（下载按钮修复验证）
 - [ ] Pages Connect Git 自动部署
 - [ ] Search Console / AdSense
 
 ## Next Steps（新对话优先）
 
-1. **DWG 实机验收**：测 `经开区管网图.dwg` → SHP / GeoJSON（LibreDWG 路径）
-2. **实机验收中文**：`北山村JMD-201612.dxf`、`测试/20222240-规划核实总平面勘测图.dxf` 分别测 `dxf→shp` / `dxf→geojson`
-3. **DWG 产品策略**
-4. **可选**
-5. **变现**
+1. **实机验收**：上传 `北山村JMD-201612.dxf` → SHP/GeoJSON，检查中文字段（杨氏大宗祠等）是否正确
+2. **实机验收**：DXF→SHP 下载是否流畅（下载按钮修复验证）
+3. **实机验收**：上传 `北山村JMD-201612.geojson`（EPSG:4549）→ GPKG，QGIS 验证坐标正确
+4. **实机验收**：上传 `respl_4526.geojson`（WGS84）→ GPKG，QGIS 验证坐标正确
+5. **DWG 产品策略**
+6. **可选**：单文件上限提到 50–80MB；geojson→shp GBK 选项；CGCS2000
+7. **变现**：Search Console、sitemap、AdSense
 ## 架构备忘
 
 ```
 SHP→GeoJSON：shpjs + 魔数 + proj4→WGS84
 GeoJSON→*：prepareGeoJsonInput → GDAL ogr2ogr
+  - CRS 检测：detectGeoJsonCrs（crs 块）→ detectGeoJsonCrsFromCoords（坐标推断）
+  - 投影 CRS：只用 -a_srs 标注输出，不传 -s_srs（避免 GDAL 重新解释坐标）
+  - 地理 CRS：不设 assignCrs，targetCrs=EPSG:4326（no-op 重投影）
 DXF（原生 GBK）：repairDxfCp936Strings → GDAL → GeoJSON
+  - 三路判断：!isValidUtf8 → GBK转码；isValidUtf8 + GBK声明 + 无高码点 → GBK伪装UTF-8转码；真UTF-8不动
 CAD→SHP：GeoJSON 规范化 → 按几何拆分 → GDAL UTF-8 DBF → transcodeDbfUtf8ToGbk → ZIP(.cpg=GBK)
 DWG：cadview/LibreDWG → DXF（中文常丢失）→ warning + 继续导出几何
 DXF（浩辰 UTF-8 伪 ANSI_936）：统一把 `$DWGCODEPAGE` 改成 `UTF-8`，避免 GDAL 二次 GBK 解码
-KML/GPX：@tmcw/togeojson
+KML/GPX：@tmcw/togeojson → explodeGeometryCollections → closedLineStringsToPolygons
 生产 GDAL：dist .wasm.gz → middleware 解压
 上传：BaseLayout drop 拦截；ConverterApp 懒加载 gis-core
+下载：DownloadButton 延迟 revokeObjectURL 10s + 防重复点击
 地图：OpenLayers EPSG:4326；大 CAD 跳过预览
 ```
 

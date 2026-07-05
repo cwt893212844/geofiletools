@@ -101,13 +101,38 @@ function isValidUtf8(bytes: Uint8Array): boolean {
   }
 }
 
+/**
+ * When bytes are valid UTF-8 but codepage says GBK, determine whether the text is
+ * genuine UTF-8 (浩辰 CAD) or native GBK bytes that accidentally form valid UTF-8
+ * (e.g. 杨=D1EE → UTF-8 U+046E Ѯ).
+ *
+ * GBK 2-byte sequences that pass isValidUtf8 always decode to U+0080-U+07FF in UTF-8
+ * (Latin Extended / Greek / Cyrillic — never CJK).  Genuine Chinese UTF-8 decodes to
+ * CJK characters (U+2E80+).  So: if UTF-8 decode contains chars ≥ U+0800, it's real UTF-8.
+ */
+function utf8DecodeHasHighCodepoints(bytes: Uint8Array): boolean {
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) >= 0x0800) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** Rewrite CP936/GBK string values in a DXF to UTF-8 so GDAL reads Chinese reliably.
  *
  * Always rewrites $DWGCODEPAGE ANSI_936 → UTF-8 so GDAL does not re-decode the content
- * as GBK.  This covers two cases:
+ * as GBK.  This covers three cases:
  *   1. Native GBK DXF: raw GBK bytes are converted to UTF-8 (madeRepairs = true).
  *   2. 浩辰/cadence UTF-8 DXF: file is already valid UTF-8 but header still says ANSI_936;
  *      without patching the header GDAL double-decodes UTF-8→GBK→mojibake.
+ *   3. Native GBK where some byte pairs accidentally form valid UTF-8 2-byte sequences
+ *      (e.g. 杨=D1EE → valid UTF-8 U+046E).  Detected by checking that UTF-8 decode
+ *      contains only codepoints < U+0800 (GBK→UTF-8 2-byte maps to Latin/Greek/Cyrillic
+ *      range, never CJK); genuine UTF-8 Chinese has codepoints ≥ U+0800.
  */
 export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
   const lines = splitDxfLines(dxf);
@@ -116,6 +141,7 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
 
   let awaitingCodepageValue = false;
   let codepageValueIdx = -1; // index in out[] where the codepage value chunk lives
+  let codepageDeclaresGbk = false;
 
   const ascii = (bytes: Uint8Array) =>
     new TextDecoder('ascii', { fatal: false }).decode(bytes).trim();
@@ -143,6 +169,7 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
         // Record position — we will overwrite this value with UTF-8 at the end,
         // regardless of whether raw GBK bytes were found (covers 浩辰CAD UTF-8+ANSI_936).
         codepageValueIdx = out.length;
+        codepageDeclaresGbk = true;
       }
       // Fall through: value is pushed by the normal path below
     }
@@ -150,11 +177,23 @@ export function repairDxfCp936Strings(dxf: Uint8Array): Uint8Array {
     if (Number.isFinite(code) && DXF_TEXT_GROUP_CODES.has(code) && valueLine.length > 0) {
       if (
         lineHasHighBytes(valueLine) &&
-        !includesBytes(valueLine, REPLACEMENT_BYTES) &&
-        !isValidUtf8(valueLine)
+        !includesBytes(valueLine, REPLACEMENT_BYTES)
       ) {
-        out.push(new TextEncoder().encode(iconv.decode(valueLine, 'gbk')), eol);
-        continue;
+        if (!isValidUtf8(valueLine)) {
+          // Definitely not valid UTF-8 → treat as GBK
+          out.push(new TextEncoder().encode(iconv.decode(valueLine, 'gbk')), eol);
+          continue;
+        }
+        // Bytes happen to be valid UTF-8, but codepage header says GBK.
+        // Many Chinese GBK byte pairs (e.g. 杨=D1EE) accidentally pass isValidUtf8
+        // because they form valid UTF-8 2-byte sequences mapping to U+0080-U+07FF
+        // (Latin/Greek/Cyrillic — never CJK).  Genuine UTF-8 Chinese (浩辰 CAD)
+        // decodes to codepoints ≥ U+0800 (CJK range).
+        if (codepageDeclaresGbk && !utf8DecodeHasHighCodepoints(valueLine)) {
+          // GBK bytes masquerading as UTF-8 → convert to real UTF-8
+          out.push(new TextEncoder().encode(iconv.decode(valueLine, 'gbk')), eol);
+          continue;
+        }
       }
     }
 

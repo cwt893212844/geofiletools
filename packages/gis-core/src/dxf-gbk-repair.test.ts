@@ -118,4 +118,21 @@ describe('dxf-gbk-repair', () => {
     expect(repairedText).toContain('UNICODE');
     expect(repairedText).toContain('规划验收');
   });
+
+  it('converts GBK bytes that accidentally form valid UTF-8 (e.g. 杨=D1EE)', () => {
+    // 杨氏宗祠 in GBK: D1EE CABD D7EE B4C1
+    // D1EE is valid UTF-8 → U+046E (Ѯ), CABD → U+037D (ͽ)
+    // Without the fix, these would NOT be converted because isValidUtf8 returns true.
+    const gbkText = iconv.encode('杨氏宗祠', 'gbk');
+    // Verify assumption: GBK bytes decode to non-CJK in UTF-8
+    const utf8Decoded = new TextDecoder('utf-8').decode(gbkText);
+    expect(utf8Decoded).not.toMatch(/[\u4e00-\u9fff]/);
+
+    const sample = makeFakeDxf('ANSI_936', '杨氏宗祠', 'gbk');
+    const repaired = repairDxfCp936Strings(sample);
+    const out = new TextDecoder('utf-8').decode(repaired);
+    expect(out).toContain('杨氏宗祠');
+    expect(out).not.toContain('ANSI_936');
+    expect(out).toContain('UTF-8');
+  });
 });
