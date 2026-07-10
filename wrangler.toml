@@ -3,4 +3,6 @@ name = "geofiletools"
 compatibility_date = "2024-09-23"
 pages_build_output_dir = "apps/web/dist"
 
-# Git-connected builds (Dashboard): npm run build, Node 22
+# Git-connected builds (Dashboard):
+#   Build command: npm run build && node scripts/prepare-pages-dist.mjs
+#   Node: .nvmrc → 22 (or set NODE_VERSION=22 in Pages Variables)

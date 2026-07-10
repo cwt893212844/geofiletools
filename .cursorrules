@@ -86,9 +86,13 @@ git push origin main
     3. `isValidUtf8` + 高码点 → 真 UTF-8（浩辰 CAD），不动内容
 - **测试**：新增"GBK bytes that accidentally form valid UTF-8"用例，全套 33 passed
 
-#### 下载按钮卡顿/无响应
-- **根因**：`URL.revokeObjectURL(url)` 在 `anchor.click()` 后立即调用；浏览器还没读完 blob 数据就回收了 URL → 下载卡死
-- **修复**：`DownloadButton.tsx` 延迟 10 秒回收；下载中禁用按钮 + 显示 "Downloading…" 防重复点击
+#### 下载按钮卡顿/无响应 + "无法下载没有权限"
+- **根因 A**：`URL.revokeObjectURL(url)` 在 `anchor.click()` 后立即调用；浏览器还没读完 blob 数据就回收了 URL → 下载卡死
+- **根因 B**：JSZip `generateAsync({ type: 'blob' })` 返回的 Blob MIME type 为空；Chrome 对无 MIME type 的 `blob:` URL 下载会拦截
+- **根因 C**：同名文件替换时，Chrome 的 blob URL 下载无法正确处理"替换"权限请求 → "无法下载 - 没有权限"
+- **修复**：
+  - `gdal-service.ts`：JSZip 输出包一层 `new Blob([rawBlob], { type: 'application/zip' })`
+  - `DownloadButton.tsx`：Chromium 浏览器走 `showSaveFilePicker`（File System Access API），通过系统原生保存对话框写文件，绕过 blob URL 权限限制；非 Chromium fallback 到 `blob:` URL + DOM anchor
 
 ### 2026-07-05（CRS 检测 + KML 闭合线 + SHP 文件提示）
 
@@ -208,21 +212,91 @@ git push origin main
 - [x] **KML→GeoJSON 闭合折线**：`closedLineStringsToPolygons()` 自动转 Polygon
 - [x] **SHP 文件要求提示**：错误消息含上传文件列表 + FAQ 明确说明
 - [x] **DXF 编码深化修复**：`utf8DecodeHasHighCodepoints` 区分真 UTF-8 中文和 GBK 字节伪装 UTF-8，全套 33 测试通过
-- [x] **下载按钮性能修复**：延迟 `revokeObjectURL` 10s + 防重复点击
-- [ ] **实机复测**：`北山村JMD-201612.dxf` → SHP → QGIS GBK 中文属性表
-- [ ] **实机复测**：下载 DXF→SHP ZIP 是否流畅（下载按钮修复验证）
-- [ ] Pages Connect Git 自动部署
-- [ ] Search Console / AdSense
+- [x] **下载按钮**：延迟 `revokeObjectURL` 10s + `appendChild/removeChild` + downloading 锁。**根因是解压软件占住 ZIP 文件**而非代码 bug
+- [x] **gdal-service.ts**：JSZip 输出包 `application/zip` MIME + `convertCadToShapefileZip` 支持 `assignCrs` 传递
+- [x] **gdal-service.ts**：JSZip 输出包 `application/zip` MIME + `convertCadToShapefileZip` 支持 `assignCrs` 传递
+- [ ] **DXF→SHP 中文验收**（**阻塞**：GDAL WASM 输出 Text 字段是 GBK 字节伪装 UTF-8，SubClasses 全是 AcDbEntity 无 AcDbText 子类）
+
+### 2026-07-06（实机验收：3 个问题诊断）
+
+**问题 1（DXF→SHP 中文部分乱码）**：截图中"无法进入"正常，"杨"等生僻字乱码。代码逻辑（`shapefileEncoding: 'CP936'` → `transcodeDbfUtf8ToGbk` + DBF LDID `0x57`）正确；33 测试全过。**未实机验证最新代码**——可能是旧产物（7/5 13:21 生成）。
+
+**问题 2（北山村 GeoJSON→GPKG 乱连线）**：**根因是输入文件本身**。`北山村JMD-201612.geojson` 坐标 X∈[-165, 80], Y≈997k（CAD 本地工程坐标被错误写入为 GeoJSON）。没有 `crs` 块，`detectGeoJsonCrsFromCoords` 启发式推断不出正确 CRS。GDAL 把 Y=997k 当 WGS84 纬度（> 90）→ 坐标错乱。**这是输入文件 bug，不是转换器 bug**。UI 应加"可疑 CRS"警告（未实现）。
+
+**问题 3（respl_4526.geojson→GPKG 坐标错）**：文件实际是 WGS84（X=113.24-113.40, Y=21.89-22.15，深圳），**没有 crs 块**。`detectGeoJsonCrsFromCoords` 应正确识别为地理坐标 → `sourceCrs=undefined` → `targetCrs='EPSG:4326'` 保留 → GDAL `-t_srs EPSG:4326` no-op。代码逻辑正确，**未实机验证最新代码**。
+
+### 2026-07-06（`detectGeoJsonCrsFromCoords` 启发式改进）
+
+- 重写中文 3度带检测：用 X（easting）和 Y（northing）联合推算带号（之前用 Y 推算带号是错的）
+- fallback `EPSG:4549` 改为：仅当 X 绝对值 > 1000 **且** Y 在 1M-6M 范围内（避免 CAD 本地坐标误判）
+- 33 测试全过
+
+### 2026-07-07（DXF→SHP 中文乱码根因 #2：诊断代码浏览器 Buffer 未定义）
+
+#### 现象
+- 实机重跑 `北山村JMD-201612.dxf` → SHP，截图显示 `"Buffer is not defined"` 错误
+- 控制台所有管线日志（repair stats、detectCadCrs、convertCad→SHP 21225 features）都正常打印
+- 但**最终 download 阶段崩溃**
+
+#### 根因
+- 上一轮诊断（截图 #1 的 `Text` 字段字节分析）时在 `gdal-service.ts` `convertCadToShapefileZip` 加了：
+  ```ts
+  console.log(`    UTF-8 bytes: ${Buffer.from(bytes).toString('hex')}`);
+  ```
+- `Buffer` 是 Node.js 全局对象，**浏览器没有**；代码被 Vite/Astro 打包后运行在浏览器 → ReferenceError
+- 该诊断代码永远不可能在生产环境跑成功
+
+#### 修复
+1. **`Buffer.from(bytes).toString('hex')` → `Array.from(bytes, b => b.toString(16).padStart(2,'0')).join('')`** — 纯浏览器兼容
+2. **`gdal-service.ts` `initGdalJs` 全局加 `config: { DXF_ENCODING: 'UTF-8' }`** — 告诉 GDAL WASM 不要做任何 GBK→UTF-8 转码
+   - 因为 `repairDxfCp936Strings` 已经在 JS 层把字节流修成 UTF-8
+   - 默认时 GDAL 看到 `$DWGCODEPAGE=ANSI_936` 仍会试图 iconv 重编码，导致 UTF-8 字节被当 GBK 二次解码（mojibake）
+3. **删除 `repairLatin1GbkMojibake` 反向解码函数**（`text-encoding.ts`）—— 反向解码不可靠
+   - 测试验证 `±±É½´å` → UTF-8 字节 `c2 b1 c2 b1 c3 89 c2 bd c2 b4 c3 a5` → GBK 解码 → `卤卤脡陆麓氓`（错的）
+   - 原 GBK 字节 `B1 B1 C9 BD B4 E5`（北山村）反向修复后变 `卤卤脡陆麓氓`，**信息已损失**
+4. **替换对应测试用例**：从 `repairs Latin-1 mojibake` → `strips U+FFFD replacement chars`
+5. **`npm test`：33 passed**；`npm run build`：14 页 OK
+
+#### 关键认识
+- DXF→SHP 中文乱码的**真实根因**：GDAL WASM 的 DXF driver WASM 编译可能没启用 iconv 路径，或对 `$DWGCODEPAGE=ANSI_936` 的处理有 bug，把 native GBK 字节当 Latin-1 pass-through 再 JS string
+- **根本解法**：JS 层**预先**把 DXF 字节流转成 UTF-8（`repairDxfCp936Strings`），再让 GDAL 走 `DXF_ENCODING=UTF-8` 不做任何额外转码
+- 不要试图在 JS 端"反向修复" GDAL 输出字符串——信息已损
+
+#### 待实机验证
+- [ ] `geofiletools.com/convert/dxf-to-shp` 上传 `北山村JMD-201612.dxf` → QGIS GBK 看中文属性
+
+### 当前代码状态（2026-07-07 22:30）
+- Dev server PID 14516 在 `http://localhost:4321` 运行
+- 仓库根：`北山村JMD-201612.dxf`（17MB 原生 GBK DXF，验收样本）
+- `packages/gis-core/src/gdal-service.ts` `convertCadToShapefileZip` 加了诊断日志（待用户跑后看）
+- `packages/gis-core/src/dxf-gbk-repair.ts` 加了 stats 日志
+- `packages/gis-core/src/text-encoding.ts` 更新了 `repairLatin1GbkMojibake` 走 TextEncoder + iconv gbk（待用户验证）
 
 ## Next Steps（新对话优先）
 
-1. **实机验收**：上传 `北山村JMD-201612.dxf` → SHP/GeoJSON，检查中文字段（杨氏大宗祠等）是否正确
-2. **实机验收**：DXF→SHP 下载是否流畅（下载按钮修复验证）
-3. **实机验收**：上传 `北山村JMD-201612.geojson`（EPSG:4549）→ GPKG，QGIS 验证坐标正确
-4. **实机验收**：上传 `respl_4526.geojson`（WGS84）→ GPKG，QGIS 验证坐标正确
-5. **DWG 产品策略**
-6. **可选**：单文件上限提到 50–80MB；geojson→shp GBK 选项；CGCS2000
-7. **变现**：Search Console、sitemap、AdSense
+1. **AdSense 申请**（隐私政策页已上线 `/privacy-policy`）
+2. **验证 Git Connect 首次自动部署**（push main 后看 Cloudflare Deployments）
+3. **#3 重新验收**：`测试/respl_4526.geojson` → GPKG，QGIS 验证坐标在深圳附近
+4. **UI 加警告**（可疑 CRS）：`prepareGeoJsonInput` 检测异常坐标 → 警告用户
+5. **可选**：单文件上限 50–80MB；geojson→shp GBK 选项；CGCS2000
+6. **DWG 产品策略**
+7. **搁置**：DXF→SHP 中文乱码（GDAL WASM iconv / `$DWGCODEPAGE` 顽固 bug）
+
+### 2026-07-10（变现基建）
+- Search Console：域名验证 + sitemap 提交成功（14→15 URLs，含 privacy-policy）
+- 新增 `/privacy-policy` + footer 链接；部署 `bbee4283`
+- Pages Connect：已连 `cwt893212844/geofiletools`，Automatic deployments Enabled
+- Build：`npm run build && node scripts/prepare-pages-dist.mjs`；输出 `apps/web/dist`
+- Node：仓库根 `.nvmrc` = `22`（Pages 构建读此文件）
+
+## 待测试资产
+
+| 文件 | 实际坐标 | 应该用 |
+|------|----------|--------|
+| `北山村JMD-201612.dxf` | DXF 原生 GBK | → SHP/GeoJSON 测试中文 |
+| `北山村JMD-201612.geojson` | CAD 本地坐标（X∈[-165,80], Y≈997k）| **无效输入**，仅供启发式测试 |
+| `测试/respl_4526.geojson` | WGS84（113-114, 22-23 深圳）| → GPKG 测试 CRS |
+| `测试/respl_qgis转的.geojson` | EPSG:4526 (38M, 2.4M) | → GPKG 测试 CGCS2000 |
 ## 架构备忘
 
 ```
