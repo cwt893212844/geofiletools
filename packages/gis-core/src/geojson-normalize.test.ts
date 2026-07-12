@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseGeoJsonCollection, prepareGeoJsonForOgr } from './geojson-normalize';
+import { parseGeoJsonCollection, prepareGeoJsonForOgr, prepareGeoJsonInput } from './geojson-normalize';
 
 describe('geojson-normalize', () => {
   it('parses FeatureCollection', () => {
@@ -40,5 +40,38 @@ describe('geojson-normalize', () => {
 
     expect(fc.features[0]?.properties?.FID).toBe(1);
     expect(fc.features[0]?.properties?.名称).toBe('测试');
+  });
+
+  it('warns on CAD local coordinates without CRS metadata', () => {
+    const prepared = prepareGeoJsonInput(
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Point', coordinates: [-100, 997000] },
+          },
+        ],
+      }),
+    );
+    expect(prepared.sourceCrs).toBeUndefined();
+    expect(prepared.warnings.some((w) => /local CAD/i.test(w))).toBe(true);
+  });
+
+  it('does not warn for WGS84 GeoJSON', () => {
+    const prepared = prepareGeoJsonInput(
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: { type: 'Point', coordinates: [113.3, 22.1] },
+          },
+        ],
+      }),
+    );
+    expect(prepared.warnings).toEqual([]);
   });
 });

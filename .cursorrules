@@ -272,7 +272,7 @@ git push origin main
 - [ ] `geofiletools.com/convert/dxf-to-shp` 上传 `北山村JMD-201612.dxf` → QGIS GBK 看中文属性
 
 ### 当前代码状态（2026-07-12 同步 · WIP 可交付部分已上线）
-- 生产：`geofiletools.com`；Pages Connect → `cwt893212844/geofiletools`
+- 生产：`geofiletools.com`；Pages Connect → `cwt893212844/geofiletools`；最新 push `ba33ed8`（等 Cloudflare 自动部署）
 - 本轮上线（本地 WIP 拆分）：CRS 坐标推断 + `assignCrs`、KML 闭合线→面、CAD `detectCadCrs`、SHP 上传提示、DownloadButton DOM 挂载
 - **未上线（仍本地）**：DXF 中文乱码诊断（`dxf-gbk-repair` 已还原为 HEAD）、`测试/` 资产、`scripts/test_*.js` / `scripts/debug_*`
 - 变现基建：Search Console + sitemap + privacy-policy 已就绪；**AdSense 等收录/流量，先不申**
@@ -302,12 +302,17 @@ git push origin main
 
 ## Next Steps（新对话优先）
 
-1. **实机验收**：`测试/respl_4526.geojson` → GPKG（深圳 WGS84）；`测试/respl_qgis转的.geojson` → GPKG（EPSG:4526 / 带号）
-2. **UI 加警告**（可疑 CRS）：CAD 本地坐标（如 Y≈997k）误当 GeoJSON 时提示用户
-3. **等收录/流量后再申 AdSense**
-4. **搁置**：DXF→SHP 中文乱码（勿轻易加全局 `DXF_ENCODING=UTF-8`）
-5. **可选**：单文件上限 50–80MB；geojson→shp GBK 选项；DWG 产品策略
-6. **清理**：本地 `测试/` + `scripts/test_*` / `debug_*` 勿入库
+1. **实机验收**：`测试/respl_4526.geojson` → GPKG（深圳 WGS84）；`测试/respl_qgis转的.geojson` → GPKG（EPSG:4526 / 带号）；可疑 CRS 警告用 `北山村JMD-201612.geojson` 验收
+2. **等收录/流量后再申 AdSense**
+3. **搁置**：DXF→SHP 中文乱码（勿轻易加全局 `DXF_ENCODING=UTF-8`）
+4. **可选**：单文件上限 50–80MB；geojson→shp GBK 选项；DWG 产品策略
+5. **清理**：本地 `测试/` + `scripts/test_*` / `debug_*` 勿入库
+
+### 2026-07-12（可疑 CRS 警告）
+- `detectSuspiciousGeoJsonCoords()`：非 WGS84 且无法识别为 CGCS2000/UTM 时警告（CAD 本地坐标 X 小 + Y≈1e6）
+- `prepareGeoJsonInput` 返回 `warnings[]`；ConverterApp geojson-to-* / geojson-to-kml + GeoJSON Viewer 展示琥珀色提示
+- 有显式 `crs` 块时不警告；可推断投影 CRS 时不警告
+- 测试：41 passed（含 coordinate + prepareGeoJsonInput 用例）
 
 ## 待测试资产
 

@@ -1,6 +1,7 @@
 import {
   detectGeoJsonCrs,
   detectGeoJsonCrsFromCoords,
+  detectSuspiciousGeoJsonCoords,
   looksLikeGeographic,
   reprojectFeatureCollection,
 } from './coordinate';
@@ -102,10 +103,17 @@ export function prepareGeoJsonInput(text: string): {
   sourceCrs?: string;
   ogrFile: File;
   previewText: string;
+  warnings: string[];
 } {
   const collection = parseGeoJsonCollection(text);
-  // Prefer explicit CRS block, then infer from coordinate values
-  const sourceCrs = detectGeoJsonCrs(collection) ?? detectGeoJsonCrsFromCoords(collection);
+  const explicitCrs = detectGeoJsonCrs(collection);
+  const sourceCrs = explicitCrs ?? detectGeoJsonCrsFromCoords(collection);
+  const warnings: string[] = [];
+  // Only flag suspicious coords when there is no explicit CRS metadata to trust.
+  if (!explicitCrs) {
+    const suspicious = detectSuspiciousGeoJsonCoords(collection);
+    if (suspicious) warnings.push(suspicious);
+  }
   const ogrCollection = prepareGeoJsonForOgr(collection);
   const forPreview = prepareGeoJsonForPreview(ogrCollection, sourceCrs);
 
@@ -115,5 +123,6 @@ export function prepareGeoJsonInput(text: string): {
     sourceCrs,
     ogrFile: geoJsonCollectionToFile(ogrCollection),
     previewText: JSON.stringify(forPreview),
+    warnings,
   };
 }

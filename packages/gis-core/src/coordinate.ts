@@ -77,6 +77,38 @@ function firstPosition(geometry: GeoJSON.Geometry | null | undefined): Position 
   return current as Position;
 }
 
+function sampleCoordinateExtents(collection: GeoJSON.FeatureCollection): {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+} | undefined {
+  const positions: number[][] = [];
+  for (const f of collection.features) {
+    if (!f.geometry) continue;
+    const pos = firstPosition(f.geometry);
+    if (pos && pos.length >= 2) positions.push(pos);
+    if (positions.length >= 10) break;
+  }
+  if (positions.length === 0) return undefined;
+
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const [x, y] of positions) {
+    if (x < xMin) xMin = x;
+    if (x > xMax) xMax = x;
+    if (y < yMin) yMin = y;
+    if (y > yMax) yMax = y;
+  }
+  return { xMin, xMax, yMin, yMax };
+}
+
+function isGeographicExtent(xMin: number, xMax: number, yMin: number, yMax: number): boolean {
+  return xMax <= 180 && xMin >= -180 && yMax <= 90 && yMin >= -90;
+}
+
 /** True when coordinates look like lon/lat degrees (not projected meters). */
 export function looksLikeGeographic(collection: GeoJSON.FeatureCollection): boolean {
   for (const feature of collection.features) {
@@ -130,54 +162,57 @@ function cgcs2000ZoneToEpsg(zone: number): string {
 
 /** Infer CRS from coordinate values in a GeoJSON collection (heuristic). */
 export function detectGeoJsonCrsFromCoords(collection: GeoJSON.FeatureCollection): string | undefined {
-  // Collect sample positions
-  const positions: number[][] = [];
-  for (const f of collection.features) {
-    if (!f.geometry) continue;
-    const pos = firstPosition(f.geometry);
-    if (pos && pos.length >= 2) positions.push(pos);
-    if (positions.length >= 10) break;
-  }
-  if (positions.length === 0) return undefined;
-
-  // Compute extents
-  let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
-  for (const [x, y] of positions) {
-    if (x < xMin) xMin = x;
-    if (x > xMax) xMax = x;
-    if (y < yMin) yMin = y;
-    if (y > yMax) yMax = y;
-  }
+  const extents = sampleCoordinateExtents(collection);
+  if (!extents) return undefined;
+  const { xMin, xMax, yMin, yMax } = extents;
 
   // Geographic coordinates → WGS84
-  if (xMax <= 180 && xMin >= -180 && yMax <= 90 && yMin >= -90) {
+  if (isGeographicExtent(xMin, xMax, yMin, yMax)) {
     return undefined; // already geographic, no assignment needed
   }
 
-  // Zone-prefixed CGCS2000 (e.g. 38xxxxxx easting → zone 38 → EPSG:4560 CM-only mapping
-  // Note: zone-prefixed EPSG codes are 4514–4533 style; we map via the same zone→4546+ formula
-  // used elsewhere so .prj is present. Users with exact 45xx codes can reassign in QGIS.
+  // Zone-prefixed CGCS2000 (e.g. 38xxxxxx easting → zone 38)
   const avgX = (xMin + xMax) / 2;
   if (avgX > 10_000_000 && avgX < 50_000_000 && yMin > 1_800_000 && yMax < 6_000_000) {
     const zone = Math.floor(avgX / 1_000_000);
     if (zone >= 24 && zone <= 45) return cgcs2000ZoneToEpsg(zone);
   }
 
-  // Chinese 3-degree projected CRS detection (CM-only, false easting ≈500k)
-  // Cannot recover zone from X alone — assign a common default when in range.
+  // Chinese 3-degree projected CRS (CM-only, false easting ≈500k)
   if (xMin > 10_000 && xMax < 1_200_000 && yMin > 1_800_000 && yMax < 6_000_000) {
     return 'EPSG:4549';
   }
 
   // Fallback: large coords that are clearly projected
-  // Only when BOTH X and Y are large — CAD local coords typically have small X.
   if (
     Math.abs(xMin) > 1000 &&
     Math.abs(xMax) > 1000 &&
-    yMin > 1_000_000 && yMax < 6_000_000
+    yMin > 1_000_000 &&
+    yMax < 6_000_000
   ) {
     return 'EPSG:4549';
   }
 
   return undefined;
+}
+
+/**
+ * Warn when coordinates are neither WGS84 nor a recognizable projected CRS.
+ * Typical case: CAD local/engineering coords written into GeoJSON (e.g. X≈±100, Y≈1e6).
+ */
+export function detectSuspiciousGeoJsonCoords(
+  collection: GeoJSON.FeatureCollection,
+): string | undefined {
+  const extents = sampleCoordinateExtents(collection);
+  if (!extents) return undefined;
+  const { xMin, xMax, yMin, yMax } = extents;
+
+  if (isGeographicExtent(xMin, xMax, yMin, yMax)) return undefined;
+  if (detectGeoJsonCrsFromCoords(collection)) return undefined;
+
+  return (
+    'Coordinates do not look like WGS84 lon/lat or a known projected CRS (CGCS2000/UTM). ' +
+    'They may be a local CAD/engineering system. Output keeps these values as-is — ' +
+    'assign the correct CRS in QGIS, or re-export from CAD/GIS with CRS metadata.'
+  );
 }

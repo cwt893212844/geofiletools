@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { convertShapefileToGeoJSON, inspect, isShapefileUpload, toGeoJSON } from '@gis-tools/core';
+import { convertShapefileToGeoJSON, inspect, isShapefileUpload, prepareGeoJsonInput, toGeoJSON } from '@gis-tools/core';
 import { GDAL_PATHS } from '../lib/gdal-paths';
 import { ConversionProgress } from './ConversionProgress';
 import { FileDropzone } from './FileDropzone';
@@ -34,9 +34,14 @@ export function GeoJsonViewerApp() {
       if (primary.name.toLowerCase().endsWith('.geojson') || primary.name.toLowerCase().endsWith('.json')) {
         onProgress(50, 'Reading GeoJSON…');
         const text = await primary.text();
-        JSON.parse(text);
-        setGeojsonText(text);
-        setMeta('GeoJSON loaded locally');
+        const prepared = prepareGeoJsonInput(text);
+        setGeojsonText(prepared.previewText);
+        setMeta(
+          prepared.warnings[0] ??
+            (prepared.sourceCrs
+              ? `GeoJSON loaded · CRS ${prepared.sourceCrs}`
+              : 'GeoJSON loaded locally'),
+        );
         onProgress(100, 'Ready');
         setStage('done');
         return;
@@ -83,7 +88,11 @@ export function GeoJsonViewerApp() {
         disabled={stage === 'loading-engine' || stage === 'reading' || stage === 'converting'}
       />
       <ConversionProgress stage={stage} progress={progress} message={progressMessage} error={error} />
-      {meta && stage === 'done' && <p className="text-sm text-slate-600">{meta}</p>}
+      {meta && stage === 'done' && (
+        <p className={`text-sm ${/local CAD/i.test(meta) ? 'text-amber-700' : 'text-slate-600'}`}>
+          {meta}
+        </p>
+      )}
       <MapPreview geojsonText={geojsonText} heightClassName="h-[32rem]" />
     </div>
   );

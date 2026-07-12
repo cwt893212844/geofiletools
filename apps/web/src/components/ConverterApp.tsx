@@ -214,6 +214,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         inputGeoJsonText = await primary.text();
         const prepared = prepareGeoJsonInput(inputGeoJsonText);
         previewTextOverride = prepared.previewText;
+        conversionWarnings.push(...prepared.warnings);
         inspection = {
           layers: [
             {
@@ -240,6 +241,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         );
 
         const convertOpts = gdalConvertOptions(mode, outputFormat);
+        conversionWarnings.push(...prepared.warnings);
 
         if (prepared.sourceCrs) {
           // Projected coordinates (e.g. CGCS2000, UTM): don't reproject to WGS84 —
