@@ -11,6 +11,8 @@ export interface ConvertOptions {
   outputFormat: OutputFormat;
   sourceCrs?: string;
   targetCrs?: string;
+  /** Assign CRS to output without transforming coordinates (-a_srs). */
+  assignCrs?: string;
   layerName?: string;
   /** Force output geometry type (-nlt) for shapefile layers. */
   geometryType?: string;

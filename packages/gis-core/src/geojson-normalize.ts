@@ -1,5 +1,6 @@
 import {
   detectGeoJsonCrs,
+  detectGeoJsonCrsFromCoords,
   looksLikeGeographic,
   reprojectFeatureCollection,
 } from './coordinate';
@@ -103,7 +104,8 @@ export function prepareGeoJsonInput(text: string): {
   previewText: string;
 } {
   const collection = parseGeoJsonCollection(text);
-  const sourceCrs = detectGeoJsonCrs(collection);
+  // Prefer explicit CRS block, then infer from coordinate values
+  const sourceCrs = detectGeoJsonCrs(collection) ?? detectGeoJsonCrsFromCoords(collection);
   const ogrCollection = prepareGeoJsonForOgr(collection);
   const forPreview = prepareGeoJsonForPreview(ogrCollection, sourceCrs);
 

@@ -343,6 +343,9 @@ export function buildOgr2OgrOptions(options: ConvertOptions): string[] {
   if (options.targetCrs) {
     opts.push('-t_srs', options.targetCrs);
   }
+  if (options.assignCrs) {
+    opts.push('-a_srs', options.assignCrs);
+  }
   if (options.layerName) {
     opts.push('-nln', options.layerName);
   }
@@ -585,6 +588,7 @@ async function convertCadToShapefileZip(
       outputFormat: 'ESRI Shapefile',
       geometryType: layer.nlt,
       shapefileEncoding: 'CP936',
+      assignCrs: convertOptions.assignCrs,
     }, operationOptions);
 
     const inner = await JSZip.loadAsync(await layerZip.arrayBuffer());

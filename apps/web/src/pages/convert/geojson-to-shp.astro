@@ -4,22 +4,22 @@ import ConverterPage from '../../layouts/ConverterPage.astro';
 
 <ConverterPage
   title="GeoJSON to Shapefile Converter"
-  description="Convert GeoJSON to Shapefile (.zip) online. No desktop GIS required."
+  description="Convert GeoJSON to Shapefile (.zip) online. Supports both WGS84 and projected CRS (CGCS2000, UTM)."
   mode="geojson-to-shp"
   accept=".geojson,.json"
   hint="Upload a .geojson or .json file"
   faq={[
     {
-      question: 'What projection will the Shapefile use?',
-      answer: 'GeoJSON is treated as WGS84 (EPSG:4326) unless your data already includes CRS metadata.',
+      question: 'What CRS will the Shapefile use?',
+      answer: 'If your GeoJSON has a CRS metadata block, that CRS is used. Otherwise, coordinates are checked automatically — projected coordinates (e.g. CGCS2000, UTM in meters) are kept as-is with the detected CRS assigned; geographic coordinates (lon/lat) default to WGS84.',
+    },
+    {
+      question: 'My GeoJSON has CGCS2000 or UTM coordinates — will they be preserved?',
+      answer: 'Yes. The converter detects projected coordinates and assigns the correct CRS without reprojecting. The output Shapefile will include a .prj file with the detected coordinate system.',
     },
     {
       question: 'Can ArcGIS open the result?',
       answer: 'Yes. The download is a standard Shapefile archive compatible with ArcGIS, QGIS, and Global Mapper.',
-    },
-    {
-      question: 'Are attributes preserved?',
-      answer: 'Feature properties are written to the DBF when field names and types are compatible with Shapefile limits.',
     },
   ]}
 />

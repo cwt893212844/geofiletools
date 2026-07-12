@@ -157,6 +157,22 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         previewViaFiles = [dwgResult.dxfFile];
         fileName = suggestedDownloadName(primary.name.replace(/\.dwg$/i, ''), outputFormat);
         inspection = await inspect([dwgResult.dxfFile], gdalOptions);
+
+        // Show detected CRS from DWG in the report
+        if (dwgResult.detectedCrs && inspection) {
+          inspection = {
+            ...inspection,
+            layers: inspection.layers.map((l) => ({ ...l, crs: dwgResult.detectedCrs })),
+          };
+        } else if (inspection && outputFormat === 'ESRI Shapefile') {
+          inspection = {
+            ...inspection,
+            warnings: [
+              ...inspection.warnings,
+              'Drawing has no coordinate system; output keeps original CAD coordinates. Assign CRS in QGIS if locations look wrong.',
+            ],
+          };
+        }
       } else if (usesLightweightKmlGpx(mode)) {
         onProgress(40, 'Parsing KML/GPX…');
         blob = await kmlOrGpxFileToGeoJSONBlob(primary);
@@ -222,6 +238,20 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
             .map((f) => f.geometry?.type)
             .filter((t): t is string => !!t),
         );
+
+        const convertOpts = gdalConvertOptions(mode, outputFormat);
+
+        if (prepared.sourceCrs) {
+          // Projected coordinates (e.g. CGCS2000, UTM): don't reproject to WGS84 —
+          // just assign the detected CRS to the output so GIS software can locate the data.
+          delete convertOpts.targetCrs;
+          convertOpts.assignCrs = prepared.sourceCrs;
+          const outName = outputFormat === 'ESRI Shapefile' ? 'Shapefile' : outputFormat;
+          conversionWarnings.push(
+            `Detected CRS ${prepared.sourceCrs} from coordinates. Output ${outName} will include this CRS.`,
+          );
+        }
+
         inspection = {
           layers: [
             {
@@ -235,7 +265,7 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         };
         blob = await convert(
           [prepared.ogrFile],
-          { ...gdalConvertOptions(mode, outputFormat), sourceCrs: prepared.sourceCrs },
+          convertOpts,
           gdalOptions,
         );
       } else if (mode === 'shp-to-geojson') {
@@ -247,7 +277,15 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
         onProgress(95, 'Done');
       } else {
         inspection = await inspect(inputFiles, gdalOptions);
-        if (usesCadInput(mode) && !inspection.layers.some((layer) => layer.crs)) {
+
+        // Detect CRS from CAD files and assign it to the SHP output (.prj).
+        let detectedCrs: string | undefined;
+        if (usesCadInput(mode)) {
+          const { detectCadCrs } = gis;
+          detectedCrs = await detectCadCrs(primary, gdalOptions);
+        }
+
+        if (usesCadInput(mode) && !inspection.layers.some((layer) => layer.crs) && !detectedCrs) {
           inspection = {
             ...inspection,
             warnings: [
@@ -266,7 +304,19 @@ export function ConverterApp({ mode, accept, hint }: ConverterAppProps) {
             ],
           };
         }
-        blob = await convert(inputFiles, gdalConvertOptions(mode, outputFormat), gdalOptions);
+
+        const convertOpts = gdalConvertOptions(mode, outputFormat);
+        if (detectedCrs && !convertOpts.sourceCrs && !convertOpts.targetCrs) {
+          convertOpts.assignCrs = detectedCrs;
+          if (inspection) {
+            inspection = {
+              ...inspection,
+              layers: inspection.layers.map((l) => ({ ...l, crs: detectedCrs })),
+            };
+          }
+        }
+
+        blob = await convert(inputFiles, convertOpts, gdalOptions);
       }
 
       if (conversionWarnings.length > 0) {

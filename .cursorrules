@@ -58,9 +58,15 @@ git push origin main
 ### 部署（Cloudflare Pages）
 - **域名**：https://geofiletools.com
 - **GitHub**：https://github.com/cwt893212844/geofiletools
-- **最新部署**：`4ff17d96` / commit `6f6b740`（2026-07-03，LibreDWG DXF 改为警告+继续）
+- **Pages Connect**：已连 **正确仓库** `cwt893212844/geofiletools`（曾误连 `labagenticflow`，已 Disconnect 重连；对 labagenticflow 站无实质影响）
+- **Automatic deployments**：Enabled；Build command 建议 `npm run build`；输出 `apps/web/dist`
+- **最新成功部署**：`9ffae198` / commit `1e05609`（2026-07-12，pin Node 22.12 + prepare 幂等）
+- **隐私政策**：`/privacy-policy/` 线上正常；footer 有链接
 - GDAL WASM：`prepare-pages-dist.mjs` → `.wasm.gz`；`functions/_middleware.js` 边缘解压
+- Node：`.nvmrc` / `.node-version` = `22.12.0`
 - `apps/web/public/_routes.json` — `/_astro/*` 不走 middleware
+- Search Console：域名已验证；sitemap `https://geofiletools.com/sitemap-index.xml` 已提交
+- **AdSense**：先不申请，等收录/有流量（与 imgkitlab 同一策略）
 
 ## 关键修复
 
@@ -265,35 +271,49 @@ git push origin main
 #### 待实机验证
 - [ ] `geofiletools.com/convert/dxf-to-shp` 上传 `北山村JMD-201612.dxf` → QGIS GBK 看中文属性
 
-### 当前代码状态（2026-07-07 22:30）
-- Dev server PID 14516 在 `http://localhost:4321` 运行
-- 仓库根：`北山村JMD-201612.dxf`（17MB 原生 GBK DXF，验收样本）
-- `packages/gis-core/src/gdal-service.ts` `convertCadToShapefileZip` 加了诊断日志（待用户跑后看）
-- `packages/gis-core/src/dxf-gbk-repair.ts` 加了 stats 日志
-- `packages/gis-core/src/text-encoding.ts` 更新了 `repairLatin1GbkMojibake` 走 TextEncoder + iconv gbk（待用户验证）
+### 当前代码状态（2026-07-12 同步 · WIP 可交付部分已上线）
+- 生产：`geofiletools.com`；Pages Connect → `cwt893212844/geofiletools`
+- 本轮上线（本地 WIP 拆分）：CRS 坐标推断 + `assignCrs`、KML 闭合线→面、CAD `detectCadCrs`、SHP 上传提示、DownloadButton DOM 挂载
+- **未上线（仍本地）**：DXF 中文乱码诊断（`dxf-gbk-repair` 已还原为 HEAD）、`测试/` 资产、`scripts/test_*.js` / `scripts/debug_*`
+- 变现基建：Search Console + sitemap + privacy-policy 已就绪；**AdSense 等收录/流量，先不申**
+- `npm test`：33 passed；`npm run build`：15 页 OK
+
+### 2026-07-10 ~ 2026-07-12（变现基建 + Pages Connect）
+
+#### 已完成（已上线）
+- Search Console：域名验证 + sitemap 提交
+- `/privacy-policy` 页 + footer 链接；sitemap 15 URLs
+- Pages Connect：Automatic deployments Enabled
+- CI：`1e05609` — Node 22.12.0；`npm run build` 链式 prepare-pages-dist（幂等）
+- 线上验证：`/privacy-policy/` LIVE OK；Git 部署 `9ffae198` / `1e05609` 成功
+
+#### 踩坑
+1. **误连 Git 仓库**：曾把 `geofiletools` Pages 项目连到 `cwt893212844/labagenticflow` → Failure「No deployment available」。**已改回 `geofiletools`**。
+2. 误连期间隐私页曾回首页；`1e05609` 已修复。
+3. AdSense：**不要急着申**，等收录 + 有流量（与 imgkitlab 一致）。
+
+#### 2026-07-12 WIP 拆分上线
+- `detectGeoJsonCrsFromCoords` + GeoJSON `assignCrs`（`-a_srs`，不传 `-s_srs`）
+- `convertCadToShapefileZip` 透传 `assignCrs`（否则分层 SHP 丢 .prj）
+- KML：`explodeGeometryCollections` + `closedLineStringsToPolygons`
+- CAD：`detectCadCrs` → SHP `.prj`；CM-only 默认 `EPSG:4549`；带号前缀从 easting 推带号
+- SHP 页 hint/FAQ + 错误消息含上传文件名
+- DownloadButton：`appendChild`/`removeChild` 再 click
 
 ## Next Steps（新对话优先）
 
-1. **AdSense 申请**（隐私政策页已上线 `/privacy-policy`）
-2. **验证 Git Connect 首次自动部署**（push main 后看 Cloudflare Deployments）
-3. **#3 重新验收**：`测试/respl_4526.geojson` → GPKG，QGIS 验证坐标在深圳附近
-4. **UI 加警告**（可疑 CRS）：`prepareGeoJsonInput` 检测异常坐标 → 警告用户
-5. **可选**：单文件上限 50–80MB；geojson→shp GBK 选项；CGCS2000
-6. **DWG 产品策略**
-7. **搁置**：DXF→SHP 中文乱码（GDAL WASM iconv / `$DWGCODEPAGE` 顽固 bug）
-
-### 2026-07-10（变现基建）
-- Search Console：域名验证 + sitemap 提交成功（14→15 URLs，含 privacy-policy）
-- 新增 `/privacy-policy` + footer 链接；部署 `bbee4283`
-- Pages Connect：已连 `cwt893212844/geofiletools`，Automatic deployments Enabled
-- Build：`npm run build && node scripts/prepare-pages-dist.mjs`；输出 `apps/web/dist`
-- Node：仓库根 `.nvmrc` = `22`（Pages 构建读此文件）
+1. **实机验收**：`测试/respl_4526.geojson` → GPKG（深圳 WGS84）；`测试/respl_qgis转的.geojson` → GPKG（EPSG:4526 / 带号）
+2. **UI 加警告**（可疑 CRS）：CAD 本地坐标（如 Y≈997k）误当 GeoJSON 时提示用户
+3. **等收录/流量后再申 AdSense**
+4. **搁置**：DXF→SHP 中文乱码（勿轻易加全局 `DXF_ENCODING=UTF-8`）
+5. **可选**：单文件上限 50–80MB；geojson→shp GBK 选项；DWG 产品策略
+6. **清理**：本地 `测试/` + `scripts/test_*` / `debug_*` 勿入库
 
 ## 待测试资产
 
 | 文件 | 实际坐标 | 应该用 |
 |------|----------|--------|
-| `北山村JMD-201612.dxf` | DXF 原生 GBK | → SHP/GeoJSON 测试中文 |
+| `北山村JMD-201612.dxf` | DXF 原生 GBK | → SHP/GeoJSON 测试中文（搁置） |
 | `北山村JMD-201612.geojson` | CAD 本地坐标（X∈[-165,80], Y≈997k）| **无效输入**，仅供启发式测试 |
 | `测试/respl_4526.geojson` | WGS84（113-114, 22-23 深圳）| → GPKG 测试 CRS |
 | `测试/respl_qgis转的.geojson` | EPSG:4526 (38M, 2.4M) | → GPKG 测试 CGCS2000 |

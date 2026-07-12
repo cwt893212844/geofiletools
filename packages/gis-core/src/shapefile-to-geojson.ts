@@ -142,12 +142,18 @@ async function readShapefileBuffers(files: File[]): Promise<ShapefileBuffers> {
         `Invalid shapefile geometry type (${type ?? 'unknown'}). The .shp file may be corrupt or incomplete.`,
       );
     }
-    throw new Error('Shapefile is missing a valid .shp geometry file.');
+    const fileNames = entries.map((e) => e.name).join(', ');
+    throw new Error(
+      `No valid .shp file found. You uploaded: ${fileNames || '(none)'}. A Shapefile needs at least .shp + .shx + .dbf files.`,
+    );
   }
 
   const dbf = pickDbfBuffer(entries);
   if (!dbf?.byteLength) {
-    throw new Error('Shapefile is missing a valid .dbf file.');
+    const fileNames = entries.map((e) => e.name).join(', ');
+    throw new Error(
+      `Missing .dbf attribute file. You uploaded: ${fileNames || '(none)'}. Select .shp, .shx, and .dbf together.`,
+    );
   }
 
   return {

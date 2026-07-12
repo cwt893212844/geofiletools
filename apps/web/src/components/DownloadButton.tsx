@@ -16,7 +16,9 @@ export function DownloadButton({ blob, fileName, label = 'Download result' }: Do
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = fileName;
+    document.body.appendChild(anchor);
     anchor.click();
+    document.body.removeChild(anchor);
     // Delay revocation so the browser finishes reading the blob
     setTimeout(() => {
       URL.revokeObjectURL(url);

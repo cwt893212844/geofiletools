@@ -38,6 +38,17 @@ describe('buildOgr2OgrOptions', () => {
     const opts = buildOgr2OgrOptions({ outputFormat: 'ESRI Shapefile' });
     expect(opts).toContain('ENCODING=UTF-8');
   });
+
+  it('includes assignCrs when provided', () => {
+    const opts = buildOgr2OgrOptions({ outputFormat: 'ESRI Shapefile', assignCrs: 'EPSG:4549' });
+    expect(opts).toContain('-a_srs');
+    expect(opts).toContain('EPSG:4549');
+  });
+
+  it('omits assignCrs when not provided', () => {
+    const opts = buildOgr2OgrOptions({ outputFormat: 'ESRI Shapefile' });
+    expect(opts).not.toContain('-a_srs');
+  });
 });
 
 describe('parseOgrinfoResult', () => {
