@@ -7,7 +7,7 @@
   ],
   "scripts": {
     "dev": "npm run dev -w apps/web",
-    "build": "npm run build -w apps/web",
+    "build": "npm run build -w apps/web && node scripts/prepare-pages-dist.mjs",
     "preview": "npm run preview -w apps/web",
     "test": "npm run test -w @gis-tools/core",
     "postinstall": "node scripts/copy-gdal-assets.mjs && node scripts/copy-dwg-wasm-assets.mjs"

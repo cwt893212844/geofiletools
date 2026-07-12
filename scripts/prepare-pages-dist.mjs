@@ -1,10 +1,21 @@
 import { gzipSync } from 'node:zlib';
-import { readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const distGdal = join(process.cwd(), 'apps', 'web', 'dist', 'gdal');
 const wasmPath = join(distGdal, 'gdal3WebAssembly.wasm');
 const gzPath = join(distGdal, 'gdal3WebAssembly.wasm.gz');
+
+if (!existsSync(wasmPath)) {
+  if (existsSync(gzPath)) {
+    const gzMb = (statSync(gzPath).size / 1024 / 1024).toFixed(2);
+    console.log(`[prepare-pages-dist] already prepared (${gzPath} ${gzMb} MiB), skipping`);
+    process.exit(0);
+  }
+  console.error(`[prepare-pages-dist] missing ${wasmPath}`);
+  console.error('Run `npm run build -w apps/web` first (or ensure postinstall copied GDAL assets).');
+  process.exit(1);
+}
 
 const raw = readFileSync(wasmPath);
 const compressed = gzipSync(raw, { level: 9 });
